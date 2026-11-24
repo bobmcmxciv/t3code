@@ -105,7 +105,7 @@ export const AssetCreateUrlResult = Schema.Struct({
 });
 export type AssetCreateUrlResult = typeof AssetCreateUrlResult.Type;
 
-export const ATTACHMENT_UPLOAD_URL_TTL_MS = 10 * 60_000;
+export const ATTACHMENT_UPLOAD_URL_TTL_MS = 30 * 60_000;
 
 const ImageAttachmentCreateUploadUrlInput = Schema.Struct({
   type: Schema.optionalKey(Schema.Literal("image")),

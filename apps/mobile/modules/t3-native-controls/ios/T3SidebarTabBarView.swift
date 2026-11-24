@@ -110,12 +110,12 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
     let iconBundle = Bundle(for: Self.self).url(forResource: "T3NativeControlIcons", withExtension: "bundle").flatMap(Bundle.init(url:))
     let pullRequestIcon = UIImage(named: "pull-request", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
     let labels = [
-      "threads": "Chats", "pullRequests": "PRs", "issues": "Issues", "workflows": "Workflows",
+      "threads": "Chats", "companion": "工作台", "pullRequests": "PRs", "issues": "Issues", "workflows": "Workflows",
       "usage": "Usage", "settings": "Settings",
     ]
     let issueIcon = UIImage(named: "issue", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
     let symbols = [
-      "threads": "text.bubble", "workflows": "point.3.connected.trianglepath.dotted",
+      "threads": "text.bubble", "companion": "square.grid.2x2", "workflows": "point.3.connected.trianglepath.dotted",
       "usage": "chart.bar.xaxis", "settings": "gearshape",
     ]
     for (tab, label) in labels {

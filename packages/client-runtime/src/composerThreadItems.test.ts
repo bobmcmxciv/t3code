@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   matchComposerEnvironmentItems,
   matchComposerThreadItems,
+  parseComposerThreadQuery,
   type ComposerThreadCandidate,
 } from "./composerThreadItems.ts";
 
@@ -104,6 +105,47 @@ it("also offers threads on linked machines, naming the machine, but no other mac
       description: "Thread on Hetzner VPS",
     },
   ]);
+});
+
+it("supports explicit @t:, @thread:, and @会话: prefixes including listing recent threads on empty query", () => {
+  expect(parseComposerThreadQuery("t:")).toEqual({ explicitThreadMode: true, searchQuery: "" });
+  expect(parseComposerThreadQuery("thread:迁移")).toEqual({
+    explicitThreadMode: true,
+    searchQuery: "迁移",
+  });
+  expect(parseComposerThreadQuery("会话:预算")).toEqual({
+    explicitThreadMode: true,
+    searchQuery: "预算",
+  });
+  expect(parseComposerThreadQuery("deploy")).toEqual({
+    explicitThreadMode: false,
+    searchQuery: "deploy",
+  });
+
+  const shells = [
+    shell("older", "旧迁移讨论", { updatedAt: "2026-10-10T00:00:00.000Z" }),
+    shell("newest", "最新部署计划", { updatedAt: "2026-10-22T00:00:00.000Z" }),
+    shell("mid", "中间会话记录", { updatedAt: "2026-10-15T00:00:00.000Z" }),
+  ];
+  const recent = matchComposerThreadItems({
+    shells,
+    environmentId,
+    linkedEnvironments: new Map(),
+    excludeThreadId: null,
+    query: "t:",
+    now: Date.parse("2026-10-23T00:00:00.000Z"),
+  });
+  expect(recent.map((item) => item.thread.threadId)).toEqual(["newest", "mid", "older"]);
+
+  const filtered = matchComposerThreadItems({
+    shells,
+    environmentId,
+    linkedEnvironments: new Map(),
+    excludeThreadId: null,
+    query: "会话:迁移",
+    now: Date.parse("2026-10-23T00:00:00.000Z"),
+  });
+  expect(filtered.map((item) => item.thread.threadId)).toEqual(["older"]);
 });
 
 describe("matchComposerEnvironmentItems", () => {

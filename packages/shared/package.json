@@ -7,6 +7,10 @@
       "types": "./src/png.ts",
       "import": "./src/png.ts"
     },
+    "./companionSubscriptions": {
+      "types": "./src/companionSubscriptions.ts",
+      "import": "./src/companionSubscriptions.ts"
+    },
     "./pullRequestAnchor": {
       "types": "./src/pullRequestAnchor.ts",
       "import": "./src/pullRequestAnchor.ts"

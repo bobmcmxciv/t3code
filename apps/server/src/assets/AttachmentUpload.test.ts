@@ -26,9 +26,11 @@ import {
 } from "../orchestration-v2/AttachmentClaims.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
+  completeAttachmentUploadChunks,
   deletePendingAttachment,
   issueAttachmentUploadUrl,
   storeAttachmentUpload,
+  storeAttachmentUploadChunk,
   validateAttachmentUploadToken,
 } from "./AttachmentUpload.ts";
 
@@ -334,6 +336,63 @@ describe("AttachmentUpload", () => {
 
       expect(NodeFS.existsSync(pendingPath)).toBe(false);
       expect(NodeFS.existsSync(claimedPath)).toBe(true);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("assembles out-of-order and retried chunks into an immutable attachment and cleans up staging", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const part0 = new TextEncoder().encode("chunk-0-alpha-");
+      const part1 = new TextEncoder().encode("chunk-1-beta-");
+      const part2 = new TextEncoder().encode("chunk-2-gamma");
+      const full = Buffer.concat([part0, part1, part2]);
+
+      const issued = yield* issueAttachmentUploadUrl({
+        type: "file",
+        name: "large-notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: full.length,
+      });
+      const token = issued.relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
+      const claims = yield* validateAttachmentUploadToken(token);
+      if (!claims) throw new Error("Expected valid upload claims.");
+
+      // Upload out of order (chunk 2 -> chunk 0 -> retry chunk 2 -> chunk 1)
+      expect(
+        yield* storeAttachmentUploadChunk(
+          claims,
+          { chunkIndex: 2, totalChunks: 3, offset: part0.length + part1.length },
+          part2,
+        ),
+      ).toEqual({ ok: true });
+      expect(
+        yield* storeAttachmentUploadChunk(claims, { chunkIndex: 0, totalChunks: 3, offset: 0 }, part0),
+      ).toEqual({ ok: true });
+      // Missing chunk 1 must be rejected on complete
+      expect(yield* completeAttachmentUploadChunks(claims, { totalChunks: 3 })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+      // Retry chunk 2 idempotently + upload chunk 1
+      expect(
+        yield* storeAttachmentUploadChunk(
+          claims,
+          { chunkIndex: 2, totalChunks: 3, offset: part0.length + part1.length },
+          part2,
+        ),
+      ).toEqual({ ok: true });
+      expect(
+        yield* storeAttachmentUploadChunk(
+          claims,
+          { chunkIndex: 1, totalChunks: 3, offset: part0.length },
+          part1,
+        ),
+      ).toEqual({ ok: true });
+
+      expect(yield* completeAttachmentUploadChunks(claims, { totalChunks: 3 })).toEqual({ ok: true });
+      const finalPath = NodePath.join(config.attachmentsDir, `${issued.attachmentId}.txt`);
+      expect(NodeFS.readFileSync(finalPath)).toEqual(full);
+      expect(NodeFS.existsSync(`${finalPath}.chunks`)).toBe(false);
     }).pipe(Effect.provide(layerTest)),
   );
 });

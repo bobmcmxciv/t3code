@@ -29,6 +29,7 @@ import {
 } from "react";
 import {
   Platform,
+  Pressable,
   ScrollView,
   useWindowDimensions,
   View,
@@ -47,6 +48,9 @@ import {
   ANDROID_READING_MAX_WIDTH,
   deriveCenteredContentHorizontalPadding,
 } from "../../lib/layout";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
@@ -97,6 +101,12 @@ import {
   type HomeProjectSortOrder,
   sortHomeProjectScopes,
 } from "./homeThreadList";
+import {
+  groupThreadListV2ItemsByProject,
+  homeDisplayListItemsAreEqual,
+  projectAccentColor,
+  type HomeDisplayListItem,
+} from "./projectGroupedThreadList";
 import { createSwipeRowActivation } from "./swipe-row-activation";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-swipe-actions";
 import { useFabScroll } from "./FabScrollContext";
@@ -285,7 +295,7 @@ export function HomeScreen(props: HomeScreenProps) {
     });
   });
   const swipeRowActivation = createSwipeRowActivation();
-  const activateVisibleRows = (rows: ReadonlyArray<ThreadListV2ListItem>) => {
+  const activateVisibleRows = (rows: ReadonlyArray<HomeDisplayListItem>) => {
     const state = listRef.current?.getState();
     if (state === undefined || !(state.end >= 0)) return;
     swipeRowActivation.activate(
@@ -455,13 +465,115 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     onSelectThread(thread);
   };
+  const [groupByProject, setGroupByProject] = useState(true);
+  const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const toggleProjectGroup = (scopeKey: string) => {
+    setCollapsedProjectKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(scopeKey)) next.delete(scopeKey);
+      else next.add(scopeKey);
+      return next;
+    });
+  };
+  const projectGroupingActive =
+    groupByProject && !hasSearchQuery && v2ScopedProjectGroup === null;
+  const { items: displayListItems, projectGroupKeys } = useMemo(
+    () =>
+      groupThreadListV2ItemsByProject({
+        items: threadListV2Items,
+        projectScopes,
+        projectByKey,
+        savedConnectionsById: props.savedConnectionsById,
+        collapsedProjectKeys,
+        enabled: projectGroupingActive,
+      }),
+    [
+      threadListV2Items,
+      projectScopes,
+      projectByKey,
+      props.savedConnectionsById,
+      collapsedProjectKeys,
+      projectGroupingActive,
+    ],
+  );
+  const allProjectsCollapsed =
+    projectGroupKeys.length > 0 &&
+    projectGroupKeys.every((key) => collapsedProjectKeys.has(key));
+  const toggleAllProjectGroups = () => {
+    setCollapsedProjectKeys(allProjectsCollapsed ? new Set() : new Set(projectGroupKeys));
+  };
   useThreadJumpShortcuts(threadListV2Items, selectThread, props.onSelectPendingTask);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the list's visible range after commit to enable swipe gestures on those rows
   useEffect(() => {
-    if (swipeEnabled) activateVisibleRows(threadListV2Items);
-  }, [activateVisibleRows, swipeEnabled, threadListV2Items]);
+    if (swipeEnabled) activateVisibleRows(displayListItems);
+  }, [activateVisibleRows, swipeEnabled, displayListItems]);
 
-  const renderV2Item = ({ item }: { readonly item: ThreadListV2ListItem }) => {
+  const renderV2Item = ({ item }: { readonly item: HomeDisplayListItem }) => {
+    if (item.type === "v2-project-group") {
+      return (
+        <View className="mx-3 mt-3 mb-1 overflow-hidden rounded-xl border border-border-subtle bg-grouped-card">
+          <View className="flex-row items-stretch">
+            <View className="w-1.5" style={{ backgroundColor: item.accentColor }} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: !item.collapsed }}
+              accessibilityLabel={`${item.title}, ${item.count} 个会话`}
+              onPress={() => toggleProjectGroup(item.scopeKey)}
+              className="min-w-0 flex-1 flex-row items-center gap-2.5 px-3 py-2.5 active:opacity-75"
+            >
+              <ProjectFavicon
+                environmentId={item.project.environmentId}
+                faviconPath={item.project.faviconPath}
+                projectIcon={item.project.projectIcon}
+                size={20}
+                projectTitle={item.project.title}
+                workspaceRoot={item.project.workspaceRoot}
+              />
+              <View className="min-w-0 flex-1">
+                <View className="flex-row items-center gap-1.5">
+                  <Text
+                    numberOfLines={1}
+                    className="shrink text-[15px] font-t3-bold text-foreground"
+                  >
+                    {item.title}
+                  </Text>
+                  {item.activeWorkingCount > 0 ? (
+                    <View className="size-2 rounded-full bg-adaptive-sky-600-400" />
+                  ) : null}
+                </View>
+                {item.environmentLabels.length > 0 ? (
+                  <Text numberOfLines={1} className="text-[11px] text-foreground-muted">
+                    {item.environmentLabels.join(" · ")}
+                  </Text>
+                ) : null}
+              </View>
+              <View className="rounded-full bg-subtle px-2 py-0.5">
+                <Text className="text-xs font-t3-semibold tabular-nums text-foreground-secondary">
+                  {item.count}
+                </Text>
+              </View>
+              <SymbolView
+                name="chevron.down"
+                size={12}
+                tintColorClassName="accent-foreground-muted"
+                type="monochrome"
+                style={{ transform: [{ rotate: item.collapsed ? "-90deg" : "0deg" }] }}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("New thread in {project}", { project: item.title })}
+              onPress={() => props.onNewThreadInProject(item.project)}
+              className="items-center justify-center border-l border-border-subtle px-3 active:opacity-60"
+            >
+              <SymbolView name="plus" size={15} tintColorClassName="accent-primary" />
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
     if (item.type === "v2-pending") {
       const pendingScopeKey = scopedProjectKey(
         item.pendingTask.environmentId,
@@ -528,7 +640,16 @@ export function HomeScreen(props: HomeScreenProps) {
       );
     }
     const thread = item.item.thread;
-    return (
+    const projectScopeForRow = projectGroupingActive && item.item.variant === "card"
+      ? projectAccentColor(
+          projectScopes.find((scope) =>
+            scope.projectRefs.some(
+              (ref) => ref.environmentId === thread.environmentId && ref.projectId === thread.projectId,
+            ),
+          )?.key ?? scopedProjectKey(thread.environmentId, thread.projectId),
+        )
+      : null;
+    const rowNode = (
       <ThreadListV2Row
         pane={sidebarSurface ? "sidebar" : "screen"}
         selected={scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKey}
@@ -597,8 +718,19 @@ export function HomeScreen(props: HomeScreenProps) {
         activationKey={item.key}
       />
     );
+    if (projectScopeForRow) {
+      return (
+        <View
+          className="ml-3.5 border-l-2"
+          style={{ borderLeftColor: `${projectScopeForRow}44` }}
+        >
+          {rowNode}
+        </View>
+      );
+    }
+    return rowNode;
   };
-  const v2KeyExtractor = (item: ThreadListV2ListItem) => item.key;
+  const v2KeyExtractor = (item: HomeDisplayListItem) => item.key;
 
   // extraData changes invalidate every visible row; put the minute clock on items to limit updates.
   const v2ExtraData = {
@@ -704,6 +836,63 @@ export function HomeScreen(props: HomeScreenProps) {
           onProjectChange={props.onProjectChange}
         />
       ) : null}
+      {!hasSearchQuery && v2ScopedProjectGroup === null ? (
+        <View className="flex-row items-center justify-between px-4 pt-1 pb-1">
+          <View className="flex-row items-center rounded-full bg-grouped-card p-0.5 border border-border-subtle">
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected: groupByProject }}
+              onPress={() => setGroupByProject(true)}
+              className={
+                groupByProject
+                  ? "rounded-full bg-primary px-2.5 py-1"
+                  : "rounded-full px-2.5 py-1 active:opacity-70"
+              }
+            >
+              <Text
+                className={
+                  groupByProject
+                    ? "text-xs font-t3-semibold text-primary-foreground"
+                    : "text-xs font-t3-medium text-foreground-muted"
+                }
+              >
+                按项目
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected: !groupByProject }}
+              onPress={() => setGroupByProject(false)}
+              className={
+                !groupByProject
+                  ? "rounded-full bg-primary px-2.5 py-1"
+                  : "rounded-full px-2.5 py-1 active:opacity-70"
+              }
+            >
+              <Text
+                className={
+                  !groupByProject
+                    ? "text-xs font-t3-semibold text-primary-foreground"
+                    : "text-xs font-t3-medium text-foreground-muted"
+                }
+              >
+                按时间
+              </Text>
+            </Pressable>
+          </View>
+          {projectGroupingActive && projectGroupKeys.length > 1 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={toggleAllProjectGroups}
+              className="rounded-full px-2 py-1 active:opacity-70"
+            >
+              <Text className="text-xs font-t3-medium text-foreground-muted">
+                {allProjectsCollapsed ? `展开全部 (${projectGroupKeys.length})` : `折叠全部 (${projectGroupKeys.length})`}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </>
   );
 
@@ -772,17 +961,17 @@ export function HomeScreen(props: HomeScreenProps) {
                 ref={listRef}
                 onLoad={() => {
                   settleLaunchSplashHomeRows();
-                  activateVisibleRows(threadListV2Items);
+                  activateVisibleRows(displayListItems);
                 }}
                 onTouchStart={(event) => trackListTouches(event, true)}
                 onTouchEnd={(event) => trackListTouches(event, false)}
                 onTouchCancel={(event) => trackListTouches(event, false)}
                 renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
-                data={threadListV2Items}
+                data={displayListItems}
                 renderItem={renderV2Item}
                 keyExtractor={v2KeyExtractor}
                 getItemType={(item) => item.type}
-                itemsAreEqual={threadListV2ListItemsAreEqual}
+                itemsAreEqual={homeDisplayListItemsAreEqual}
                 estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
                 drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
                 recycleItems

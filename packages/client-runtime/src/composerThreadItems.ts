@@ -13,6 +13,28 @@ import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
 const COMPOSER_THREAD_RESULT_LIMIT = 5;
+const EXPLICIT_COMPOSER_THREAD_RESULT_LIMIT = 8;
+const EXPLICIT_THREAD_QUERY_PREFIX = /^(?:thread|threads|t|会话|对话):(.*)$/iu;
+
+/**
+ * Parses an `@` mention query for an explicit thread prefix (`@t:`, `@thread:`, `@会话:`).
+ * When explicit, the picker lists recent threads even before extra search characters are typed
+ * and suppresses unrelated workspace file/model noise.
+ */
+export function parseComposerThreadQuery(rawQuery: string): {
+  readonly explicitThreadMode: boolean;
+  readonly searchQuery: string;
+} {
+  const trimmed = rawQuery.trimStart();
+  const match = EXPLICIT_THREAD_QUERY_PREFIX.exec(trimmed);
+  if (!match) {
+    return { explicitThreadMode: false, searchQuery: rawQuery };
+  }
+  return {
+    explicitThreadMode: true,
+    searchQuery: (match[1] ?? "").trim(),
+  };
+}
 
 export type ComposerThreadCandidate = ThreadSearchShell &
   Pick<EnvironmentThreadShell, "archivedAt" | "lineage">;
@@ -44,8 +66,9 @@ export function matchComposerThreadItems(
   },
   resolve: MFunctionType = mFallback,
 ): ComposerThreadItem[] {
-  const query = foldSearchQuery(input.query);
-  if (query.length === 0) return [];
+  const { explicitThreadMode, searchQuery } = parseComposerThreadQuery(input.query);
+  const query = foldSearchQuery(searchQuery);
+  if (!explicitThreadMode && query.length === 0) return [];
   // Closing an unused side chat deletes it, so only one with a message is offered.
   const isOwnSideChat = (shell: ComposerThreadCandidate) =>
     shell.lineage.sideChat === true &&
@@ -60,30 +83,44 @@ export function matchComposerThreadItems(
       shell.archivedAt === null &&
       (isListedThreadLineage(shell.lineage) || isOwnSideChat(shell)),
   );
-  return rankSearchItems(candidates, (shell, options) =>
-    scoreThreadSearch(query, threadSearchSubject(shell, null), input.now, {
-      ...options,
-      picks: false,
-    }),
-  )
-    .slice(0, COMPOSER_THREAD_RESULT_LIMIT)
-    .map(({ item: shell }) => {
-      const machine =
-        shell.environmentId === input.environmentId
-          ? undefined
-          : input.linkedEnvironments.get(shell.environmentId);
-      return {
-        id: `thread:${shell.environmentId}:${shell.id}`,
-        type: "thread",
-        thread: { environmentId: shell.environmentId, threadId: shell.id },
-        label: shell.title,
-        description: isOwnSideChat(shell)
-          ? resolve(msg("Side chat"))
-          : machine === undefined
-            ? resolve(msg("Thread", { $context: "noun, search result type" }))
-            : resolve(msg("Thread on {machine}", { machine })),
-      };
-    });
+  const limit = explicitThreadMode
+    ? EXPLICIT_COMPOSER_THREAD_RESULT_LIMIT
+    : COMPOSER_THREAD_RESULT_LIMIT;
+  const matchedShells =
+    query.length === 0
+      ? [...candidates]
+          .sort(
+            (a, b) =>
+              Date.parse(b.updatedAt || b.createdAt || "") -
+              Date.parse(a.updatedAt || a.createdAt || ""),
+          )
+          .slice(0, limit)
+      : rankSearchItems(candidates, (shell, options) =>
+          scoreThreadSearch(query, threadSearchSubject(shell, null), input.now, {
+            ...options,
+            picks: false,
+          }),
+        )
+          .slice(0, limit)
+          .map(({ item }) => item);
+
+  return matchedShells.map((shell) => {
+    const machine =
+      shell.environmentId === input.environmentId
+        ? undefined
+        : input.linkedEnvironments.get(shell.environmentId);
+    return {
+      id: `thread:${shell.environmentId}:${shell.id}`,
+      type: "thread",
+      thread: { environmentId: shell.environmentId, threadId: shell.id },
+      label: shell.title,
+      description: isOwnSideChat(shell)
+        ? resolve(msg("Side chat"))
+        : machine === undefined
+          ? resolve(msg("Thread", { $context: "noun, search result type" }))
+          : resolve(msg("Thread on {machine}", { machine })),
+    };
+  });
 }
 
 export interface ComposerEnvironmentCandidate {

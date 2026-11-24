@@ -79,8 +79,8 @@ const WINDOW_OPTIONS = [
   },
 ] as const;
 
-const CHART_HEIGHT = 180;
-const WIDE_CHART_HEIGHT = 260;
+const CHART_HEIGHT = 136;
+const WIDE_CHART_HEIGHT = 200;
 // Below this the page keeps the phone's single column.
 const WIDE_WIDTH = 600;
 const MAX_CONTENT_WIDTH = 1080;
@@ -254,8 +254,8 @@ function UsageScreen(props: {
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
           className="flex-1"
-          contentContainerClassName="px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+          contentContainerClassName="px-3.5 pt-2.5"
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}
           onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
           refreshControl={
             showingLimits || canReadDiagnostics ? (
@@ -266,7 +266,7 @@ function UsageScreen(props: {
             ) : undefined
           }
         >
-          <View className="w-full gap-6 self-center" style={{ maxWidth: MAX_CONTENT_WIDTH }}>
+          <View className="w-full gap-3.5 self-center" style={{ maxWidth: MAX_CONTENT_WIDTH }}>
             {wide ? (
               <View className="flex-row items-center gap-3">
                 {showingLimits ? (
@@ -300,7 +300,7 @@ function UsageScreen(props: {
             <Animated.View
               key={showingLimits ? "limits" : "usage"}
               entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
-              className="gap-6"
+              className="gap-3.5"
             >
               {showingLimits ? (
                 <UsageLimitsSection
@@ -429,7 +429,7 @@ function UsageUpdating({
 
   return (
     <View>
-      <Animated.View style={dimStyle} className="gap-6" accessibilityState={{ busy: dimmed }}>
+      <Animated.View style={dimStyle} className="gap-3.5" accessibilityState={{ busy: dimmed }}>
         {children}
       </Animated.View>
       {label !== null ? (
@@ -482,7 +482,7 @@ function ChartCard(props: {
 
   return (
     <View
-      className={`gap-4 rounded-[24px] border-continuous bg-grouped-card p-4${props.fill ? " flex-1" : ""}`}
+      className={`gap-2.5 rounded-2xl border border-border-subtle bg-grouped-card p-3${props.fill ? " flex-1" : ""}`}
     >
       {props.title ? (
         <Text className="text-sm font-t3-medium text-foreground">{props.title}</Text>
@@ -539,13 +539,13 @@ function UsageSummary(props: { readonly merged: MergedUsage; readonly metric: Us
   const gt = useGT();
   return (
     <View className="gap-0.5">
-      <Text className="text-sm text-foreground-muted">
+      <Text className="text-xs text-foreground-muted">
         {metric === "cost" ? gt("Raw token cost") : gt("Processed tokens")}
       </Text>
-      <Text className="text-4xl font-t3-bold tabular-nums text-foreground">
+      <Text className="text-2xl font-t3-bold tabular-nums text-foreground">
         {metric === "cost" ? `${formatUsd(merged.costUsd)}*` : formatTokens(merged.totalTokens)}
       </Text>
-      <Text className="text-sm text-foreground-muted">
+      <Text className="text-xs text-foreground-muted">
         {metric === "cost"
           ? gt("* if billed at full API rate")
           : gt("{count, plural, other {Across {sessions} sessions}}", {

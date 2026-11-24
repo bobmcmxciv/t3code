@@ -49,7 +49,9 @@ import { sourceControlMediaResponse } from "./assets/sourceControlMediaResponse.
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
+  completeAttachmentUploadChunks,
   storeAttachmentUpload,
+  storeAttachmentUploadChunk,
   validateAttachmentUploadToken,
 } from "./assets/AttachmentUpload.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
@@ -582,7 +584,7 @@ export const layerAssetRoute = HttpRouter.add(
   SIGNED_URL_ROUTE_OPTIONS,
 );
 
-export const layerAttachmentUploadRoute = HttpRouter.add(
+const layerAttachmentUploadPostRoute = HttpRouter.add(
   "POST",
   `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/*`,
   Effect.gen(function* () {
@@ -599,6 +601,14 @@ export const layerAttachmentUploadRoute = HttpRouter.add(
     const claims = yield* validateAttachmentUploadToken(token);
     if (!claims) {
       return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+
+    if (url.value.searchParams.get("complete") === "1") {
+      const totalChunks = Number(url.value.searchParams.get("chunks"));
+      const completed = yield* completeAttachmentUploadChunks(claims, { totalChunks });
+      return completed.ok
+        ? HttpServerResponse.empty({ status: 204 })
+        : HttpServerResponse.text(completed.detail, { status: completed.status });
     }
 
     const contentLengthHeader = request.headers["content-length"];
@@ -620,6 +630,47 @@ export const layerAttachmentUploadRoute = HttpRouter.add(
       : HttpServerResponse.text(stored.detail, { status: stored.status });
   }),
   SIGNED_URL_ROUTE_OPTIONS,
+);
+
+const layerAttachmentUploadChunkRoute = HttpRouter.add(
+  "PUT",
+  `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/*`,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = requestUrl(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+
+    const token = url.value.pathname.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
+    if (!token) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+    const claims = yield* validateAttachmentUploadToken(token);
+    if (!claims) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+
+    const chunkIndex = Number(url.value.searchParams.get("chunk"));
+    const totalChunks = Number(url.value.searchParams.get("chunks"));
+    const offset = Number(url.value.searchParams.get("offset"));
+
+    const bodyPull = yield* Stream.toPull(request.stream);
+    const stored = yield* storeAttachmentUploadChunk(
+      claims,
+      { chunkIndex, totalChunks, offset },
+      Stream.fromPull(Effect.succeed(bodyPull)),
+    );
+    return stored.ok
+      ? HttpServerResponse.empty({ status: 204 })
+      : HttpServerResponse.text(stored.detail, { status: stored.status });
+  }),
+  SIGNED_URL_ROUTE_OPTIONS,
+);
+
+export const layerAttachmentUploadRoute = Layer.mergeAll(
+  layerAttachmentUploadPostRoute,
+  layerAttachmentUploadChunkRoute,
 );
 
 const decodeBuildManifest = Schema.decodeUnknownEffect(

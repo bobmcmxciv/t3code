@@ -33,15 +33,26 @@ export function sidebarFolderRowId(projectKey: string) {
   return `folder:${projectKey}`;
 }
 
+const PROJECT_ACCENT_HUES = [239, 160, 38, 330, 199, 263, 173, 25] as const;
+
+function projectAccentColor(projectKey: string): string {
+  let hash = 0;
+  for (let i = 0; i < projectKey.length; i += 1) {
+    hash = (hash * 31 + projectKey.charCodeAt(i)) | 0;
+  }
+  const hue = PROJECT_ACCENT_HUES[Math.abs(hash) % PROJECT_ACCENT_HUES.length]!;
+  return `hsl(${hue} 78% 58%)`;
+}
+
 /**
- * A project folder in the boring sidebar. It reads like a shelf header: a trailing
- * count and chevron, with the count and a status dot only while it is closed, so a
- * closed folder still says when a hidden thread needs you.
+ * A prominent project-first folder header (`先项目 -> 后会话`) with a color-coded left
+ * accent strip, subtle tinted surface, bold project title, and always-visible thread count.
  */
 export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHeader(props: {
   group: SidebarProjectSnapshot;
   collapsed: boolean;
   hiddenThreads: readonly EnvironmentThreadShell[];
+  totalThreadCount?: number;
   onToggle: (group: SidebarProjectSnapshot) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
   onContextMenu: (
@@ -53,6 +64,8 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   const gt = useGT();
   const m = useMessages();
   const { group, collapsed, hiddenThreads } = props;
+  const threadCount = props.totalThreadCount ?? hiddenThreads.length;
+  const accentColor = projectAccentColor(group.projectKey);
   const rowId = sidebarFolderRowId(group.projectKey);
   const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   const dot = collapsed
@@ -71,7 +84,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   return (
     <li
       data-testid="sidebar-project-folder"
-      className="group/project-folder relative mt-2 list-none first:mt-0"
+      className="group/project-folder relative mt-2.5 mb-0.5 list-none first:mt-0"
     >
       <button
         type="button"
@@ -86,10 +99,11 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
             contextMenuSourceOf(event),
           );
         }}
-        className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        style={{ borderLeftColor: accentColor }}
+        className="flex h-8.5 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) border border-sidebar-border/60 border-l-[3px] bg-sidebar-accent/45 px-2.5 text-left outline-none transition-colors hover:bg-sidebar-accent/75 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <ProjectFavicon project={group} className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight text-sidebar-foreground">
           {group.displayName}
         </span>
         {dot ? (
@@ -97,15 +111,15 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
             <span className="sr-only">{m(FOLDER_DOT_LABEL[dot])}</span>
           </span>
         ) : null}
-        {collapsed && hiddenThreads.length > 0 ? (
-          <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible group-has-[[data-sidebar-action-for]:focus]/project-folder:invisible pointer-coarse:invisible">
-            {hiddenThreads.length}
+        {threadCount > 0 ? (
+          <span className="shrink-0 rounded-full bg-sidebar-background/75 px-1.5 py-0.5 text-[11px] leading-none font-medium tabular-nums text-sidebar-foreground/75 group-hover/project-folder:invisible group-has-[[data-sidebar-action-for]:focus]/project-folder:invisible pointer-coarse:invisible">
+            {threadCount}
           </span>
         ) : null}
         <ChevronDownIcon
           aria-hidden
           className={cn(
-            "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
+            "size-3.5 shrink-0 text-sidebar-muted-foreground transition-transform",
             collapsed && "-rotate-90",
           )}
         />

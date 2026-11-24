@@ -6,6 +6,7 @@ import {
 import {
   matchComposerEnvironmentItems,
   matchComposerThreadItems,
+  parseComposerThreadQuery,
 } from "@t3tools/client-runtime/composerThreadItems";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
@@ -125,12 +126,13 @@ export function useComposerMenuItems({
   const settledPullRequestTextQuery =
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
+  const threadMentionQuery = parseComposerThreadQuery(pathTriggerQuery);
   const environmentThreadShells = useVisibleThreadShells(isPathTrigger);
   // Mounts older settled threads matching the mention, here and on linked machines, which shells
   // may leave out.
   useThreadSearch(
     isPathTrigger ? [environmentId, ...linkedEnvironments.keys()] : [],
-    pathTriggerQuery,
+    threadMentionQuery.searchQuery,
     { titlesOnly: true },
   );
   // The user's machines feed `@` machine matches; the catalog summary is cheap and stable.
@@ -144,8 +146,8 @@ export function useComposerMenuItems({
   const workspaceEntries = useComposerPathSearch(
     {
       environmentId,
-      cwd: isPathTrigger ? gitCwd : null,
-      query: isPathTrigger ? pathTriggerQuery : null,
+      cwd: isPathTrigger && !threadMentionQuery.explicitThreadMode ? gitCwd : null,
+      query: isPathTrigger && !threadMentionQuery.explicitThreadMode ? pathTriggerQuery : null,
     },
     messages,
   );
@@ -211,18 +213,22 @@ export function useComposerMenuItems({
   const items = ((): ComposerCommandItem[] => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
+      const threadItems = matchComposerThreadItems(
+        {
+          shells: environmentThreadShells,
+          environmentId,
+          linkedEnvironments,
+          excludeThreadId: activeThreadId,
+          query: composerTrigger.query,
+          now,
+        },
+        messages,
+      );
+      if (threadMentionQuery.explicitThreadMode) {
+        return threadItems;
+      }
       return [
-        ...matchComposerThreadItems(
-          {
-            shells: environmentThreadShells,
-            environmentId,
-            linkedEnvironments,
-            excludeThreadId: activeThreadId,
-            query: composerTrigger.query,
-            now,
-          },
-          messages,
-        ),
+        ...threadItems,
         // An answer to an agent's question carries thread links, not machines.
         ...(questionAttachmentTarget === null && offersMachines
           ? matchComposerEnvironmentItems(

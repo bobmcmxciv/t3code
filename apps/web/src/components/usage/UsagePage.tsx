@@ -672,18 +672,18 @@ function UsageOverview({
   const rankedProviders = rankProvidersByMetric(activeProviders, merged.providers, metric);
 
   return (
-    <div aria-busy={loadingPartial} className="flex flex-col gap-6">
+    <div aria-busy={loadingPartial} className="flex flex-col gap-4">
       {sourceMessages.map((message) => (
-        <p key={message} className="mb-4 text-sm text-muted-foreground">
+        <p key={message} className="mb-2 text-xs text-muted-foreground">
           {message}
         </p>
       ))}
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <div className="flex min-w-0 flex-col gap-5">
-          <div className="flex flex-col gap-1">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
             <p
               className={cn(
-                "text-4xl font-semibold text-foreground tabular-nums",
+                "text-3xl font-semibold text-foreground tabular-nums",
                 figureClass(loadingPartial),
               )}
             >
@@ -826,11 +826,11 @@ function UsageOverview({
         </div>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-foreground">
+      <section className="flex flex-col gap-1.5">
+        <h2 className="text-xs font-semibold text-muted-foreground">
           <T>Totals</T>
         </h2>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border/60 bg-card/30 px-3 py-2 md:grid-cols-5">
           <Metric
             loading={loadingPartial}
             label={gt("Processed tokens")}
@@ -954,21 +954,21 @@ function UsageOverview({
                       key={key}
                       className="relative border-b border-border/50 text-right whitespace-nowrap text-muted-foreground tabular-nums transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50"
                     >
-                      <td className="py-2.5 pr-3 pl-2 text-left text-xs">{index + 1}</td>
-                      <td className="py-2.5 text-left whitespace-normal">
+                      <td className="py-1.5 pr-3 pl-2 text-left text-xs">{index + 1}</td>
+                      <td className="py-1.5 text-left text-xs whitespace-normal">
                         <button
                           type="button"
                           onClick={() => onSelectModel(key)}
                           className={cn(
                             "flex items-center gap-2 text-left text-foreground outline-none after:absolute after:inset-0",
-                            !hasBar && "py-1",
+                            !hasBar && "py-0.5",
                           )}
                         >
                           <ProviderMark provider={model.provider} className="size-3.5" />
                           {model.model}
                         </button>
                         {hasBar ? (
-                          <div aria-hidden className={cn("mt-1.5 h-0.5 max-w-48", rowFigures)}>
+                          <div aria-hidden className={cn("mt-1 h-0.5 max-w-48", rowFigures)}>
                             <div
                               className="h-full rounded-full"
                               style={{
@@ -979,7 +979,7 @@ function UsageOverview({
                           </div>
                         ) : null}
                       </td>
-                      <td className={cn("py-2.5 pl-6 text-foreground", rowFigures)}>
+                      <td className={cn("py-1.5 pl-6 text-xs text-foreground", rowFigures)}>
                         {isModelCostUnknown(model) ? (
                           <span className="text-muted-foreground">
                             <T>Unpriced</T>
@@ -988,10 +988,10 @@ function UsageOverview({
                           formatUsd(model.costUsd, locale)
                         )}
                       </td>
-                      <td className={cn("hidden py-2.5 pl-6 sm:table-cell", rowFigures)}>
+                      <td className={cn("hidden py-1.5 pl-6 text-xs sm:table-cell", rowFigures)}>
                         {share === null ? "" : formatPercent(share)}
                       </td>
-                      <td className={cn("py-2.5 pr-2 pl-6", rowFigures)}>
+                      <td className={cn("py-1.5 pr-2 pl-6 text-xs", rowFigures)}>
                         {formatTokens(model.totalTokens)}
                       </td>
                     </tr>

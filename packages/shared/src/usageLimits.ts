@@ -242,15 +242,32 @@ const nativeReport = (provider: ServerProvider): AccountReport => ({
 
 // Include every enabled login, even unreadable workspaces.
 function accountKeyResolver(reports: Iterable<AccountReport>) {
+  const reportList = [...reports];
+  const emailByFingerprint = new Map<string, string>();
+  for (const report of reportList) {
+    const normalizedEmail = report.email?.trim().toLowerCase();
+    const fp = report.usageLimits?.credentialFingerprint?.trim();
+    if (normalizedEmail && fp) {
+      emailByFingerprint.set(`${report.driver}:credential:${fp}`, `${report.driver}:${normalizedEmail}`);
+    }
+  }
+  const canonicalBaseKey = (report: AccountReport): string | null => {
+    const fp = report.usageLimits?.credentialFingerprint?.trim();
+    if (fp) {
+      const linked = emailByFingerprint.get(`${report.driver}:credential:${fp}`);
+      if (linked) return linked;
+    }
+    return accountKey(report.driver, report.email, report.usageLimits);
+  };
   const workspaces = new Map<string, Set<string>>();
-  for (const report of reports) {
-    const key = accountKey(report.driver, report.email, report.usageLimits);
+  for (const report of reportList) {
+    const key = canonicalBaseKey(report);
     if (key && report.workspaceId) {
       workspaces.set(key, (workspaces.get(key) ?? new Set()).add(report.workspaceId));
     }
   }
   return (report: AccountReport): string | null => {
-    const key = accountKey(report.driver, report.email, report.usageLimits);
+    const key = canonicalBaseKey(report);
     if (!key) return null;
     if (report.workspaceId) return `${key}:${report.workspaceId}`;
     const known = workspaces.get(key);
@@ -448,7 +465,104 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       }
     }
   }
-  return [...accounts.values()];
+  return deduplicateSharedLimitAccounts([...accounts.values()]);
+}
+
+const SHARED_WINDOW_RESET_TOLERANCE_MS = 90_000;
+const SHARED_WINDOW_PERCENT_TOLERANCE = 3;
+
+function hasSharedTimedWindowSignature(
+  left: ServerProviderUsageLimits,
+  right: ServerProviderUsageLimits,
+): boolean {
+  const rightByKey = new Map<string, ServerProviderUsageWindow>();
+  for (const w of right.windows) {
+    if (w.resetsAt && Number.isFinite(Date.parse(w.resetsAt))) {
+      rightByKey.set(`${w.kind}:${w.id}`, w);
+    }
+  }
+  let matched = 0;
+  for (const w of left.windows) {
+    if (!w.resetsAt || !Number.isFinite(Date.parse(w.resetsAt))) continue;
+    const other = rightByKey.get(`${w.kind}:${w.id}`);
+    if (!other?.resetsAt) continue;
+    const resetDelta = Math.abs(Date.parse(w.resetsAt) - Date.parse(other.resetsAt));
+    const pctDelta = Math.abs((w.usedPercent ?? 0) - (other.usedPercent ?? 0));
+    if (resetDelta > SHARED_WINDOW_RESET_TOLERANCE_MS || pctDelta > SHARED_WINDOW_PERCENT_TOLERANCE) {
+      return false;
+    }
+    matched += 1;
+  }
+  return matched > 0;
+}
+
+function shouldMergeSharedLimitAccounts(previous: LimitAccount, next: LimitAccount): boolean {
+  if (previous.driver !== next.driver) return false;
+  const prevEmail = previous.email?.trim().toLowerCase();
+  const nextEmail = next.email?.trim().toLowerCase();
+  if (prevEmail && nextEmail && prevEmail !== nextEmail) return false;
+
+  const prevFp = previous.limits.credentialFingerprint?.trim();
+  const nextFp = next.limits.credentialFingerprint?.trim();
+  if (prevFp && nextFp) {
+    return prevFp === nextFp;
+  }
+
+  // Only apply timed-window deduplication to unidentified native cross-host logins
+  // (no email, no distinct credentialFingerprint, and belonging to disjoint environments).
+  if (previous.environments.length === 0 || next.environments.length === 0) return false;
+  if (prevEmail || nextEmail) return false;
+  if (prevFp || nextFp) return false;
+
+  const prevEnvIds = new Set(previous.environments.map((e) => e.environmentId));
+  const sharesSameEnvironment = next.environments.some((e) => prevEnvIds.has(e.environmentId));
+  if (sharesSameEnvironment) return false;
+
+  return hasSharedTimedWindowSignature(previous.limits, next.limits);
+}
+
+function deduplicateSharedLimitAccounts(list: readonly LimitAccount[]): readonly LimitAccount[] {
+  const merged: LimitAccount[] = [];
+  for (const candidate of list) {
+    const matchIndex = merged.findIndex((existing) =>
+      shouldMergeSharedLimitAccounts(existing, candidate),
+    );
+    if (matchIndex < 0) {
+      merged.push(candidate);
+      continue;
+    }
+    const previous = merged[matchIndex]!;
+    const fresher = Date.parse(candidate.limits.checkedAt) > Date.parse(previous.limits.checkedAt);
+    const winner = fresher ? candidate : previous;
+    const environments = [
+      ...previous.environments,
+      ...candidate.environments.filter(
+        (env) => !previous.environments.some((seen) => seen.environmentId === env.environmentId),
+      ),
+    ];
+    merged[matchIndex] = {
+      ...previous,
+      displayName: previous.displayName ?? candidate.displayName,
+      email: previous.email ?? candidate.email,
+      plan: winner.plan ?? previous.plan ?? candidate.plan,
+      accentColor: previous.accentColor ?? candidate.accentColor,
+      environments,
+      sourceLabel: environments.length > 0 ? null : (previous.sourceLabel ?? candidate.sourceLabel),
+      redeem: winner.redeem ?? previous.redeem ?? candidate.redeem,
+      limits: {
+        ...winner.limits,
+        credentialFingerprint:
+          winner.limits.credentialFingerprint ??
+          previous.limits.credentialFingerprint ??
+          candidate.limits.credentialFingerprint,
+        resetCredits:
+          winner.limits.resetCredits ??
+          previous.limits.resetCredits ??
+          candidate.limits.resetCredits,
+      },
+    };
+  }
+  return merged;
 }
 
 /** Hub accounts whose read failed and that no other report shows as a row, with their names. */

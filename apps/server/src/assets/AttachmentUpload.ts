@@ -267,6 +267,257 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
   );
 });
 
+export const MAX_ATTACHMENT_UPLOAD_CHUNKS = 256;
+
+function resolveAttachmentRelativePaths(config: { readonly attachmentsDir: string }, claims: AttachmentUploadClaims) {
+  const extension =
+    claims.type === "file"
+      ? attachmentFileExtension(claims.name)
+      : inferImageExtension({ mimeType: claims.mimeType, fileName: claims.name });
+  const relativePath = `${claims.attachmentId}${extension}`;
+  const finalPath = resolveAttachmentRelativePath({
+    attachmentsDir: config.attachmentsDir,
+    relativePath,
+  });
+  const chunksDir = resolveAttachmentRelativePath({
+    attachmentsDir: config.attachmentsDir,
+    relativePath: `${relativePath}.chunks`,
+  });
+  return { relativePath, finalPath, chunksDir };
+}
+
+export const storeAttachmentUploadChunk = Effect.fn("AttachmentUpload.storeChunk")(function* (
+  claims: AttachmentUploadClaims,
+  input: {
+    readonly chunkIndex: number;
+    readonly totalChunks: number;
+    readonly offset: number;
+  },
+  body: Uint8Array | HttpServerRequest.HttpServerRequest["stream"],
+) {
+  if (
+    !Number.isInteger(input.chunkIndex) ||
+    !Number.isInteger(input.totalChunks) ||
+    !Number.isInteger(input.offset) ||
+    input.totalChunks < 1 ||
+    input.totalChunks > MAX_ATTACHMENT_UPLOAD_CHUNKS ||
+    input.chunkIndex < 0 ||
+    input.chunkIndex >= input.totalChunks ||
+    input.offset < 0 ||
+    input.offset >= claims.sizeBytes
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      detail: "Invalid chunk parameters.",
+    } satisfies StoreAttachmentUploadResult;
+  }
+
+  const config = yield* ServerConfig.ServerConfig;
+  const { relativePath, chunksDir } = resolveAttachmentRelativePaths(config, claims);
+  if (!chunksDir) {
+    return { ok: false, status: 500, detail: "Failed to resolve chunk path." };
+  }
+  const random = yield* SecureRandom.SecureRandom;
+  const partId = yield* random.uuidV4();
+  const chunkFileName = `chunk-${String(input.chunkIndex).padStart(4, "0")}.bin`;
+  const chunkPath = resolveAttachmentRelativePath({
+    attachmentsDir: config.attachmentsDir,
+    relativePath: `${relativePath}.chunks/${chunkFileName}`,
+  });
+  const tmpChunkPath = resolveAttachmentRelativePath({
+    attachmentsDir: config.attachmentsDir,
+    relativePath: `${relativePath}.chunks/${chunkFileName}.${partId}.part`,
+  });
+  if (!chunkPath || !tmpChunkPath) {
+    return { ok: false, status: 500, detail: "Failed to resolve chunk path." };
+  }
+
+  const maxAllowed = claims.sizeBytes - input.offset;
+  const fileSystem = yield* FileSystem.FileSystem;
+  let receivedBytes = 0;
+  let exceeded = false;
+  const bodyStream = body instanceof Uint8Array ? Stream.make(body) : body;
+
+  return yield* Effect.gen(function* () {
+    yield* fileSystem.makeDirectory(chunksDir, { recursive: true });
+    yield* Stream.run(
+      bodyStream.pipe(
+        Stream.takeWhile((chunk) => {
+          receivedBytes += chunk.byteLength;
+          if (receivedBytes > maxAllowed) {
+            exceeded = true;
+            return false;
+          }
+          return true;
+        }),
+      ),
+      fileSystem.sink(tmpChunkPath),
+    );
+    if (exceeded || receivedBytes === 0) {
+      return {
+        ok: false,
+        status: 400,
+        detail: exceeded ? "Chunk exceeds declared attachment size." : "Empty chunk body.",
+      } satisfies StoreAttachmentUploadResult;
+    }
+    yield* fileSystem.rename(tmpChunkPath, chunkPath);
+    return { ok: true } satisfies StoreAttachmentUploadResult;
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logError("Failed to persist attachment upload chunk.", {
+        attachmentId: claims.attachmentId,
+        chunkIndex: input.chunkIndex,
+        cause,
+      }).pipe(
+        Effect.as({
+          ok: false,
+          status: 500,
+          detail: "Failed to persist upload chunk.",
+        } satisfies StoreAttachmentUploadResult),
+      ),
+    ),
+    Effect.ensuring(
+      fileSystem.remove(tmpChunkPath, { force: true }).pipe(Effect.orElseSucceed(() => undefined)),
+    ),
+  );
+});
+
+export const completeAttachmentUploadChunks = Effect.fn("AttachmentUpload.completeChunks")(function* (
+  claims: AttachmentUploadClaims,
+  input: { readonly totalChunks: number },
+) {
+  if (
+    !Number.isInteger(input.totalChunks) ||
+    input.totalChunks < 1 ||
+    input.totalChunks > MAX_ATTACHMENT_UPLOAD_CHUNKS
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      detail: "Invalid chunk count.",
+    } satisfies StoreAttachmentUploadResult;
+  }
+
+  const config = yield* ServerConfig.ServerConfig;
+  const { relativePath, finalPath, chunksDir } = resolveAttachmentRelativePaths(config, claims);
+  const random = yield* SecureRandom.SecureRandom;
+  const partId = yield* random.uuidV4();
+  const partPath = resolveAttachmentRelativePath({
+    attachmentsDir: config.attachmentsDir,
+    relativePath: `${relativePath}.${partId}.part`,
+  });
+  if (!finalPath || !chunksDir || !partPath) {
+    return { ok: false, status: 500, detail: "Failed to resolve attachment path." };
+  }
+
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  return yield* Effect.gen(function* () {
+    const chunkPaths: string[] = [];
+    let totalBytes = 0;
+    for (let i = 0; i < input.totalChunks; i += 1) {
+      const chunkPath = resolveAttachmentRelativePath({
+        attachmentsDir: config.attachmentsDir,
+        relativePath: `${relativePath}.chunks/chunk-${String(i).padStart(4, "0")}.bin`,
+      });
+      if (!chunkPath) {
+        return { ok: false, status: 500, detail: "Failed to resolve chunk path." };
+      }
+      const stat = yield* fileSystem.stat(chunkPath).pipe(Effect.option);
+      if (Option.isNone(stat)) {
+        return {
+          ok: false,
+          status: 400,
+          detail: `Missing uploaded chunk ${i} of ${input.totalChunks}.`,
+        } satisfies StoreAttachmentUploadResult;
+      }
+      totalBytes += Number(stat.value.size);
+      chunkPaths.push(chunkPath);
+    }
+    if (totalBytes !== claims.sizeBytes) {
+      return {
+        ok: false,
+        status: 400,
+        detail: `Assembled size was ${totalBytes} bytes, expected ${claims.sizeBytes}.`,
+      } satisfies StoreAttachmentUploadResult;
+    }
+
+    yield* fileSystem.makeDirectory(path.dirname(finalPath), { recursive: true });
+    const assembledStream = Stream.fromIterable(chunkPaths).pipe(
+      Stream.flatMap((cp) => fileSystem.stream(cp)),
+    );
+    yield* Stream.run(assembledStream, fileSystem.sink(partPath));
+
+    const published = yield* fileSystem.link(partPath, finalPath).pipe(
+      Effect.as(true),
+      Effect.catch((error) => {
+        if (error.reason._tag === "AlreadyExists") return Effect.succeed(false);
+        return Effect.tryPromise({
+          try: () => NodeFSP.copyFile(partPath, finalPath, NodeFSP.constants.COPYFILE_EXCL),
+          catch: (cause) =>
+            PlatformError.systemError({
+              _tag:
+                cause instanceof Error && "code" in cause && cause.code === "EEXIST"
+                  ? "AlreadyExists"
+                  : "Unknown",
+              module: "FileSystem",
+              method: "copyFile",
+              pathOrDescriptor: finalPath,
+              cause,
+            }),
+        }).pipe(
+          Effect.as(true),
+          Effect.catchIf(
+            (error) => error.reason._tag === "AlreadyExists",
+            () => Effect.succeed(false),
+          ),
+        );
+      }),
+    );
+    if (!published) {
+      if (Number((yield* fileSystem.stat(finalPath)).size) !== claims.sizeBytes) {
+        return { ok: false, status: 409, detail: "Attachment already uploaded." };
+      }
+      const hashes = yield* Effect.forEach([partPath, finalPath], (file) =>
+        fileSystem.stream(file).pipe(
+          Stream.runFold(
+            () => NodeCrypto.createHash("sha256"),
+            (hash, chunk) => hash.update(chunk),
+          ),
+          Effect.map((hash) => hash.digest("hex")),
+        ),
+      );
+      if (hashes[0] !== hashes[1]) {
+        return { ok: false, status: 409, detail: "Attachment already uploaded." };
+      }
+    }
+
+    const documents = yield* DocumentText.DocumentText;
+    yield* documents.ensure(finalPath);
+    yield* fileSystem
+      .remove(chunksDir, { recursive: true, force: true })
+      .pipe(Effect.orElseSucceed(() => undefined));
+    return { ok: true } satisfies StoreAttachmentUploadResult;
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logError("Failed to finalize chunked attachment upload.", {
+        attachmentId: claims.attachmentId,
+        cause,
+      }).pipe(
+        Effect.as({
+          ok: false,
+          status: 500,
+          detail: "Failed to finalize upload.",
+        } satisfies StoreAttachmentUploadResult),
+      ),
+    ),
+    Effect.ensuring(
+      fileSystem.remove(partPath, { force: true }).pipe(Effect.orElseSucceed(() => undefined)),
+    ),
+  );
+});
+
 export const deletePendingAttachment = Effect.fn("AttachmentUpload.deletePending")(function* (
   attachmentId: string,
 ) {

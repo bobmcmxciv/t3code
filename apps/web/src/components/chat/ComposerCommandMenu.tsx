@@ -30,7 +30,7 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
-import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "../ui/command";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -153,20 +153,73 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             }
             className="max-h-72 min-h-0 scroll-pb-6"
           >
-            <CommandGroup>
-              {props.items.map((item) => (
-                <ComposerCommandMenuItem
-                  key={item.id}
-                  optionId={composerSuggestionOptionId(props.listId, item.id)}
-                  item={item}
-                  triggerKind={props.triggerKind}
-                  resolvedTheme={props.resolvedTheme}
-                  isActive={props.activeItemId === item.id}
-                  onHighlight={props.onHighlightedItemChange}
-                  onSelect={props.onSelect}
-                />
-              ))}
-            </CommandGroup>
+            {(() => {
+              if (props.triggerKind === "path") {
+                const sections: Array<{
+                  readonly key: string;
+                  readonly label: string;
+                  readonly items: ComposerCommandItem[];
+                }> = [
+                  {
+                    key: "threads",
+                    label: gt("Threads (tip: @t: to filter)"),
+                    items: props.items.filter((item) => item.type === "thread"),
+                  },
+                  {
+                    key: "environments",
+                    label: gt("Machines"),
+                    items: props.items.filter((item) => item.type === "environment"),
+                  },
+                  {
+                    key: "models",
+                    label: gt("Models"),
+                    items: props.items.filter((item) => item.type === "model"),
+                  },
+                  {
+                    key: "paths",
+                    label: gt("Files & folders"),
+                    items: props.items.filter((item) => item.type === "path"),
+                  },
+                ].filter((section) => section.items.length > 0);
+                const showHeadings =
+                  sections.length > 1 || sections[0]?.key === "threads";
+                if (showHeadings) {
+                  return sections.map((section) => (
+                    <CommandGroup key={section.key}>
+                      <CommandGroupLabel>{section.label}</CommandGroupLabel>
+                      {section.items.map((item) => (
+                        <ComposerCommandMenuItem
+                          key={item.id}
+                          optionId={composerSuggestionOptionId(props.listId, item.id)}
+                          item={item}
+                          triggerKind={props.triggerKind}
+                          resolvedTheme={props.resolvedTheme}
+                          isActive={props.activeItemId === item.id}
+                          onHighlight={props.onHighlightedItemChange}
+                          onSelect={props.onSelect}
+                        />
+                      ))}
+                    </CommandGroup>
+                  ));
+                }
+              }
+              return (
+                <CommandGroup>
+                  {props.items.map((item) => (
+                    <ComposerCommandMenuItem
+                      key={item.id}
+                      optionId={composerSuggestionOptionId(props.listId, item.id)}
+                      item={item}
+                      triggerKind={props.triggerKind}
+                      resolvedTheme={props.resolvedTheme}
+                      isActive={props.activeItemId === item.id}
+                      onHighlight={props.onHighlightedItemChange}
+                      onSelect={props.onSelect}
+                    />
+                  ))}
+                </CommandGroup>
+              );
+            })()}
           </CommandList>
         ) : (
           <div className="px-5 pt-3.5 pb-7">

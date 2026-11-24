@@ -13,12 +13,20 @@ import {
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
 import {
+  companionBrandFor,
+  companionRemainingPercent,
+  filterCompanionSubscriptionsForOfficialUsage,
+  formatCompanionResetCountdown,
+  resolveCompanionSubscriptionsUrl,
+  type CompanionSubscriptionCard,
+} from "@t3tools/shared/companionSubscriptions";
+import {
   collectExternalUsageLinks,
   collectLimitNotices,
   cursorUsageWindowDetails,
 } from "@t3tools/shared/usageLimitsCopy";
 import { msg, T, useGT, useMessages, Var } from "gt-react-native";
-import { Fragment, type ReactNode, useId, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useId, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useNowMinuteMs } from "../../lib/clock";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
@@ -169,7 +177,7 @@ function AccountSegment({
   );
 }
 
-function PoolWindowCard({
+function PoolWindowRow({
   pool,
   color,
   now,
@@ -177,6 +185,7 @@ function PoolWindowCard({
   label,
   description,
   wide,
+  showTopDivider,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
@@ -185,16 +194,20 @@ function PoolWindowCard({
   readonly label?: string | null;
   readonly description?: string;
   readonly wide: boolean;
+  readonly showTopDivider: boolean;
 }) {
   const navigation = useNavigation();
   const gt = useGT();
   const m = useMessages();
   const [barWidth, setBarWidth] = useState(0);
-  // Each segment needs room for its account, percent and reset to label itself.
+  const isSingleAccount = pool.columns.length === 1;
+  const singleMember = isSingleAccount ? pool.columns[0] : undefined;
+  const singleReset = singleMember?.window ? resetLabels(singleMember.window, now, m) : null;
+  const singleCredits = singleMember?.account.limits.resetCredits?.availableCount ?? 0;
   const segmentWidth = barWidth / Math.max(pool.columns.length, 1);
-  const inlineLabels = wide && segmentWidth >= 96;
-  const inlineReset = wide && segmentWidth >= 150;
-  const inlineName = wide && segmentWidth >= 220;
+  const inlineLabels = wide && !isSingleAccount && segmentWidth >= 96;
+  const inlineReset = wide && !isSingleAccount && segmentWidth >= 150;
+  const inlineName = wide && !isSingleAccount && segmentWidth >= 220;
   const nextRefill = pool.resets.find((reset) => reset.at > now && reset.restoresPercent > 0);
   const openAccount = (account: LimitAccount) =>
     navigation.navigate("SettingsUsageAccount", {
@@ -203,36 +216,7 @@ function PoolWindowCard({
       windowKind: pool.kind,
       environmentIds,
     });
-  const summary = (
-    <>
-      <View className={wide ? "gap-1" : "flex-row items-start justify-between gap-3"}>
-        <View className="gap-1">
-          {label !== null ? (
-            <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
-          ) : null}
-          <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-sm leading-(--text-3xl--line-height) text-foreground-muted">
-              <T>
-                <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
-                  <Var>{pool.remainingPercent}</Var>%
-                </Text>{" "}
-                left
-              </T>
-            </Text>
-          </View>
-        </View>
-        {pool.pace ? (
-          <Text className="text-xs text-foreground-tertiary">{m(PACE_LABEL[pool.pace])}</Text>
-        ) : null}
-      </View>
-      {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
-      {nextRefill ? (
-        <Text className="text-xs tabular-nums text-foreground-muted">
-          {refillLabel(nextRefill.member.window, now, nextRefill.restoresPercent, m)}
-        </Text>
-      ) : null}
-    </>
-  );
+
   const bar = (
     <View
       className="flex-row gap-1"
@@ -243,7 +227,7 @@ function PoolWindowCard({
           return (
             <View
               key={member.account.key}
-              className={wide ? "h-9 min-w-0 flex-1" : "h-7 min-w-0 flex-1"}
+              className={isSingleAccount ? "h-3 min-w-0 flex-1" : "h-6 min-w-0 flex-1"}
             />
           );
         const { account, window } = member;
@@ -273,11 +257,29 @@ function PoolWindowCard({
             }
             accessibilityHint={gt("Show account details")}
             onPress={() => openAccount(account)}
-            className={wide ? "h-9 min-w-0 flex-1 rounded-md" : "h-7 min-w-0 flex-1 rounded-md"}
+            className={
+              isSingleAccount
+                ? "h-3 min-w-0 flex-1 rounded-full"
+                : wide
+                  ? "h-7 min-w-0 flex-1 rounded-md"
+                  : "h-5.5 min-w-0 flex-1 rounded-md"
+            }
           >
             <PaceGap timeLeft={timeLeft}>
-              <View className="absolute inset-0 rounded-md bg-subtle" />
-              <View className="absolute inset-0 overflow-hidden rounded-md">
+              <View
+                className={
+                  isSingleAccount
+                    ? "absolute inset-0 rounded-full bg-subtle"
+                    : "absolute inset-0 rounded-md bg-subtle"
+                }
+              />
+              <View
+                className={
+                  isSingleAccount
+                    ? "absolute inset-0 overflow-hidden rounded-full"
+                    : "absolute inset-0 overflow-hidden rounded-md"
+                }
+              >
                 <AccountSegment
                   remaining={remainingPercent(window)}
                   color={normalizeProviderAccentColor(account.accentColor) ?? color}
@@ -285,46 +287,36 @@ function PoolWindowCard({
                 />
               </View>
             </PaceGap>
-            {inlineLabels ? (
+            {isSingleAccount ? null : inlineLabels ? (
               <View
                 pointerEvents="none"
-                className="absolute inset-0 flex-row items-center justify-between gap-2 overflow-hidden rounded-md px-2"
+                className="absolute inset-0 flex-row items-center justify-between gap-1.5 overflow-hidden rounded-md px-2"
               >
-                <View className="min-w-0 shrink flex-row items-center gap-1.5">
+                <View className="min-w-0 shrink flex-row items-center gap-1">
                   {account.email ? <AccountChip email={account.email} /> : null}
                   {account.email && !(account.displayName && inlineName) ? null : (
                     <Text
                       numberOfLines={1}
-                      className="min-w-0 shrink text-xs font-t3-medium text-foreground"
+                      className="min-w-0 shrink text-[11px] font-t3-medium text-foreground"
                     >
                       {accountName(account, m)}
                     </Text>
                   )}
-                  <Text className="text-sm font-t3-bold tabular-nums text-foreground">
+                  <Text className="text-xs font-t3-bold tabular-nums text-foreground">
                     {remainingPercent(window)}%
                   </Text>
                 </View>
                 {inlineReset && (resetsIn || credits) ? (
                   <View className="shrink-0 flex-row items-center gap-1 rounded bg-grouped-card/85 px-1.5 py-0.5">
                     {resetsIn ? (
-                      <>
-                        <SymbolView
-                          name="arrow.clockwise"
-                          size={11}
-                          tintColorClassName="accent-foreground-muted"
-                        />
-                        <Text className="text-xs tabular-nums text-foreground-muted">
-                          {resetsIn}
-                        </Text>
-                      </>
+                      <Text className="text-[11px] tabular-nums text-foreground-muted">
+                        {resetsIn}
+                      </Text>
                     ) : null}
                     {credits ? (
-                      <>
-                        <SymbolView name="ticket" size={12} tintColorClassName="accent-icon" />
-                        <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                          {credits}
-                        </Text>
-                      </>
+                      <Text className="text-[11px] font-t3-medium tabular-nums text-foreground">
+                        · {credits}
+                      </Text>
                     ) : null}
                   </View>
                 ) : null}
@@ -336,7 +328,7 @@ function PoolWindowCard({
               >
                 <Text
                   numberOfLines={1}
-                  className="max-w-full shrink text-xs font-t3-medium tabular-nums text-foreground"
+                  className="max-w-full shrink text-[11px] font-t3-semibold tabular-nums text-foreground"
                 >
                   {index + 1}
                 </Text>
@@ -347,120 +339,255 @@ function PoolWindowCard({
       })}
     </View>
   );
-  const legend = (
-    <View>
-      {pool.columns.map(({ account, window }, index) => {
-        if (!window) return null;
-        const segmentColor = normalizeProviderAccentColor(account.accentColor) ?? color;
-        const credits = account.limits.resetCredits?.availableCount ?? 0;
-        const reset = resetLabels(window, now, m);
-        const resetsIn = reset?.full;
-        return (
-          <Pressable
-            key={account.key}
-            accessibilityRole="button"
-            accessibilityLabel={
-              resetsIn && credits
-                ? gt(
-                    "Segment {index}, {account}, {remaining}% left, {resetsIn}, {credits, plural, other {{credits} reset credits banked}}",
-                    {
-                      index: index + 1,
-                      account: accountName(account, m),
-                      remaining: remainingPercent(window),
-                      resetsIn,
-                      credits,
-                    },
-                  )
-                : resetsIn
-                  ? gt("Segment {index}, {account}, {remaining}% left, {resetsIn}", {
-                      index: index + 1,
-                      account: accountName(account, m),
-                      remaining: remainingPercent(window),
-                      resetsIn,
-                    })
-                  : credits
-                    ? gt(
-                        "Segment {index}, {account}, {remaining}% left, {credits, plural, other {{credits} reset credits banked}}",
-                        {
-                          index: index + 1,
-                          account: accountName(account, m),
-                          remaining: remainingPercent(window),
-                          credits,
-                        },
-                      )
-                    : gt("Segment {index}, {account}, {remaining}% left", {
-                        index: index + 1,
-                        account: accountName(account, m),
-                        remaining: remainingPercent(window),
-                      })
-            }
-            accessibilityHint={gt("Show account details")}
-            onPress={() => openAccount(account)}
-            className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
-          >
-            <View className="relative size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
-              <View
-                pointerEvents="none"
-                className="absolute inset-0"
-                style={{ backgroundColor: segmentColor, opacity: 0.35 }}
-              />
-              <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                {index + 1}
-              </Text>
-            </View>
-            <Text
-              numberOfLines={1}
-              className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+
+  const legend =
+    isSingleAccount || inlineLabels ? null : (
+      <View className="mt-0.5 gap-0.5">
+        {pool.columns.map(({ account, window }, index) => {
+          if (!window) return null;
+          const segmentColor = normalizeProviderAccentColor(account.accentColor) ?? color;
+          const credits = account.limits.resetCredits?.availableCount ?? 0;
+          const reset = resetLabels(window, now, m);
+          const resetsIn = reset?.full;
+          return (
+            <Pressable
+              key={account.key}
+              accessibilityRole="button"
+              accessibilityHint={gt("Show account details")}
+              onPress={() => openAccount(account)}
+              className="min-h-[30px] flex-row items-center gap-2 py-0.5 active:opacity-60"
             >
-              {accountName(account, m)}
-            </Text>
-            <Text className="text-sm font-t3-medium tabular-nums text-foreground">
-              {remainingPercent(window)}%
-            </Text>
-            <View className="flex-row items-center gap-1">
-              {resetsIn ? (
-                <>
-                  <SymbolView
-                    name="arrow.clockwise"
-                    size={12}
-                    tintColorClassName="accent-foreground-muted"
-                  />
-                  <Text className="text-xs tabular-nums text-foreground-muted">
+              <View className="relative size-4 items-center justify-center overflow-hidden rounded bg-subtle-strong">
+                <View
+                  pointerEvents="none"
+                  className="absolute inset-0"
+                  style={{ backgroundColor: segmentColor, opacity: 0.35 }}
+                />
+                <Text className="text-[10px] font-t3-semibold tabular-nums text-foreground">
+                  {index + 1}
+                </Text>
+              </View>
+              <Text
+                numberOfLines={1}
+                className="min-w-0 flex-1 text-xs font-t3-medium text-foreground"
+              >
+                {accountName(account, m)}
+              </Text>
+              <Text className="text-xs font-t3-semibold tabular-nums text-foreground">
+                {remainingPercent(window)}%
+              </Text>
+              <View className="flex-row items-center gap-1">
+                {resetsIn ? (
+                  <Text className="text-[11px] tabular-nums text-foreground-muted">
                     {reset?.compact}
                   </Text>
-                </>
-              ) : null}
-              {credits ? (
-                <>
-                  {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
-                  <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
-                  <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                    {credits}
+                ) : null}
+                {credits ? (
+                  <Text className="text-[11px] font-t3-medium tabular-nums text-foreground">
+                    · 🎫{credits}
                   </Text>
-                </>
-              ) : null}
-            </View>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-  if (wide) {
-    return (
-      <View className="flex-row items-center gap-6 rounded-[24px] border-continuous bg-grouped-card p-4">
-        <View className="w-44 gap-1">{summary}</View>
-        <View className="min-w-0 flex-1 gap-1">
-          {bar}
-          {inlineLabels ? null : legend}
-        </View>
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     );
-  }
+
   return (
-    <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
-      {summary}
+    <View
+      className={
+        showTopDivider ? "gap-1.5 border-t border-border-subtle/70 pt-2" : "gap-1.5"
+      }
+    >
+      <Pressable
+        disabled={!singleMember}
+        onPress={() => {
+          if (singleMember) openAccount(singleMember.account);
+        }}
+        className="flex-row items-center justify-between gap-2 active:opacity-75"
+      >
+        <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+          {label !== null ? (
+            <Text numberOfLines={1} className="shrink text-xs font-t3-medium text-foreground">
+              {label ?? pool.label}
+            </Text>
+          ) : null}
+          {pool.pace ? (
+            <Text numberOfLines={1} className="text-[11px] text-foreground-tertiary">
+              · {m(PACE_LABEL[pool.pace])}
+            </Text>
+          ) : null}
+        </View>
+        <View className="shrink-0 flex-row items-center gap-2">
+          {isSingleAccount && singleReset?.compact ? (
+            <View className="flex-row items-center gap-0.5">
+              <SymbolView
+                name="arrow.clockwise"
+                size={10}
+                tintColorClassName="accent-foreground-muted"
+              />
+              <Text className="text-[11px] tabular-nums text-foreground-muted">
+                {singleReset.compact}
+              </Text>
+            </View>
+          ) : !isSingleAccount && nextRefill ? (
+            <Text className="text-[11px] tabular-nums text-foreground-muted">
+              {refillLabel(nextRefill.member.window, now, nextRefill.restoresPercent, m)}
+            </Text>
+          ) : null}
+          {isSingleAccount && singleCredits > 0 ? (
+            <View className="flex-row items-center gap-0.5">
+              <SymbolView name="ticket" size={11} tintColorClassName="accent-icon" />
+              <Text className="text-[11px] font-t3-medium tabular-nums text-foreground">
+                {singleCredits}
+              </Text>
+            </View>
+          ) : null}
+          <Text className="text-sm font-t3-bold tabular-nums text-foreground">
+            {pool.remainingPercent}%
+          </Text>
+        </View>
+      </Pressable>
       {bar}
+      {description ? <Text className="text-[11px] text-foreground-muted">{description}</Text> : null}
       {legend}
+    </View>
+  );
+}
+
+function useMobileCompanionSubscriptions(): readonly CompanionSubscriptionCard[] {
+  const [cards, setCards] = useState<readonly CompanionSubscriptionCard[]>([]);
+  useEffect(() => {
+    const url = resolveCompanionSubscriptionsUrl(
+      null,
+      process.env.EXPO_PUBLIC_COMPANION_ORIGIN ?? null,
+    );
+    if (!url) return;
+    const controller = new AbortController();
+    void fetch(url, { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { subscriptions?: CompanionSubscriptionCard[] } | null) => {
+        if (data && Array.isArray(data.subscriptions)) {
+          setCards(data.subscriptions);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+  return cards;
+}
+
+function MobileCompanionSubscriptionCard({
+  card,
+  now,
+}: {
+  readonly card: CompanionSubscriptionCard;
+  readonly now: number;
+}) {
+  const brand = companionBrandFor(card.provider);
+  const currencyPrefix =
+    card.currency === "CNY" ? "¥" : card.currency === "USD" ? "$" : card.currency ? `${card.currency} ` : "";
+  const hasBalance = card.balance !== null && card.balance !== undefined && Number.isFinite(card.balance);
+  const isLowBalance = hasBalance && (card.balance as number) <= 0;
+  return (
+    <View
+      className="gap-2 rounded-2xl border border-border-subtle bg-grouped-card p-3"
+      style={{ borderTopWidth: 2, borderTopColor: brand.color }}
+    >
+      <View className="flex-row items-center justify-between gap-2">
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <View
+            className="size-5 items-center justify-center rounded-md"
+            style={{ backgroundColor: `${brand.color}24`, borderWidth: 1, borderColor: `${brand.color}55` }}
+          >
+            <Text className="text-[9px] font-t3-bold" style={{ color: brand.color }}>
+              {brand.shortCode}
+            </Text>
+          </View>
+          <Text numberOfLines={1} className="text-sm font-t3-bold text-foreground">
+            {brand.label}
+          </Text>
+          {card.planName ? (
+            <Text numberOfLines={1} className="shrink text-[11px] text-foreground-muted">
+              {card.planName}
+            </Text>
+          ) : null}
+        </View>
+        <View className="shrink-0 flex-row items-center gap-1.5">
+          {card.machines.length > 1 ? (
+            <View className="rounded-full bg-subtle px-2 py-0.5">
+              <Text className="text-[10px] font-t3-medium tabular-nums text-foreground-muted">
+                {card.machines.length} 机共用
+              </Text>
+            </View>
+          ) : (
+            <Text numberOfLines={1} className="text-[11px] text-foreground-tertiary">
+              {card.polledBy}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      {hasBalance ? (
+        <View className="flex-row items-center justify-between gap-2 pt-0.5">
+          <Text className="text-xs text-foreground-muted">账户余额</Text>
+          <Text
+            className={
+              isLowBalance
+                ? "text-sm font-t3-bold tabular-nums text-destructive"
+                : "text-sm font-t3-bold tabular-nums text-foreground"
+            }
+          >
+            {currencyPrefix}
+            {(card.balance as number).toFixed(2)}
+            {isLowBalance ? " · 余额不足" : ""}
+          </Text>
+        </View>
+      ) : null}
+
+      {card.windows.map((win, index) => {
+        const remaining = companionRemainingPercent(win.usedPercent);
+        const resetsIn = formatCompanionResetCountdown(win.resetsAt, now);
+        return (
+          <View
+            key={`${card.provider}:${win.key}:${index}`}
+            className={
+              index > 0 || hasBalance
+                ? "gap-1.5 border-t border-border-subtle/70 pt-2"
+                : "gap-1.5"
+            }
+          >
+            <View className="flex-row items-center justify-between gap-2">
+              <Text numberOfLines={1} className="min-w-0 flex-1 text-xs font-t3-medium text-foreground">
+                {win.label}
+              </Text>
+              <View className="shrink-0 flex-row items-center gap-2">
+                {resetsIn ? (
+                  <Text className="text-[11px] tabular-nums text-foreground-muted">
+                    ↻ {resetsIn}
+                  </Text>
+                ) : null}
+                <Text className="text-sm font-t3-bold tabular-nums text-foreground">
+                  {remaining !== null ? `${remaining}%` : "—"}
+                </Text>
+              </View>
+            </View>
+            <View className="h-3 w-full overflow-hidden rounded-full bg-subtle">
+              {remaining !== null && remaining > 0 ? (
+                <View
+                  className="h-full rounded-full"
+                  style={{ width: `${remaining}%`, backgroundColor: brand.color, opacity: 0.78 }}
+                />
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
+
+      {card.error && card.windows.length === 0 && !hasBalance ? (
+        <Text className="text-[11px] text-warning-foreground">{card.error}</Text>
+      ) : null}
     </View>
   );
 }
@@ -482,18 +609,24 @@ export function UsageLimitsSection({
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
   const pools = collectLimitPools(collectLimitAccounts(selected), now);
+  const companionSubscriptions = useMobileCompanionSubscriptions();
+  const extraSubscriptions = filterCompanionSubscriptionsForOfficialUsage(
+    companionSubscriptions,
+    new Set(pools.map((pool) => String(pool.driver))),
+  );
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
   const externalLinks = collectExternalUsageLinks(selected, m);
   const colors = useProviderColors();
   const gt = useGT();
   return (
-    <View className="gap-6">
+    <View className="gap-3">
       {pools.length === 0 &&
+      extraSubscriptions.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
       externalLinks.length === 0 ? (
-        <Text className="py-12 text-center text-base text-foreground-muted">
+        <Text className="py-10 text-center text-sm text-foreground-muted">
           {selected.size === 0
             ? gt("Select an environment to see limits.")
             : gt("No provider on the selected environments reports subscription limits.")}
@@ -501,22 +634,56 @@ export function UsageLimitsSection({
       ) : null}
       {pools.map((pool) => {
         const windows = displayLimitWindows(pool);
+        const sharedEnvLabels = [
+          ...new Set(
+            pool.accounts.flatMap((account) => account.environments.map((env) => env.label)),
+          ),
+        ];
+        const primaryPlan =
+          pool.accounts.length === 1 ? (pool.accounts[0]?.plan ?? null) : null;
         return (
           <Fragment key={pool.driver}>
-            <View className="gap-3">
-              <View className="flex-row items-center gap-2 px-1">
-                <ProviderIcon provider={pool.driver} size={18} />
-                <Text className="text-base font-t3-medium text-foreground">
-                  {providerClients.get(pool.driver)?.label ?? pool.driver}
-                </Text>
+            <View className="gap-2 rounded-2xl border border-border-subtle bg-grouped-card p-3">
+              <View className="flex-row items-center justify-between gap-2">
+                <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                  <ProviderIcon provider={pool.driver} size={16} />
+                  <Text numberOfLines={1} className="text-sm font-t3-bold text-foreground">
+                    {providerClients.get(pool.driver)?.label ?? pool.driver}
+                  </Text>
+                  {primaryPlan ? (
+                    <Text numberOfLines={1} className="shrink text-[11px] text-foreground-muted">
+                      {primaryPlan}
+                    </Text>
+                  ) : null}
+                </View>
+                <View className="shrink-0 flex-row items-center gap-1.5">
+                  {pool.accounts.length > 1 ? (
+                    <View className="rounded-full bg-subtle px-2 py-0.5">
+                      <Text className="text-[10px] font-t3-semibold tabular-nums text-foreground-secondary">
+                        {pool.accounts.length} 账号
+                      </Text>
+                    </View>
+                  ) : null}
+                  {sharedEnvLabels.length > 1 ? (
+                    <View className="rounded-full bg-subtle px-2 py-0.5">
+                      <Text className="text-[10px] font-t3-medium tabular-nums text-foreground-muted">
+                        {sharedEnvLabels.length} 机共用
+                      </Text>
+                    </View>
+                  ) : sharedEnvLabels.length === 1 ? (
+                    <Text numberOfLines={1} className="text-[11px] text-foreground-tertiary">
+                      {sharedEnvLabels[0]}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
-              {windows.map((window) => {
+              {windows.map((window, index) => {
                 const details =
                   pool.driver === "cursor"
                     ? cursorUsageWindowDetails(window.id, pool, m)
                     : undefined;
                 return (
-                  <PoolWindowCard
+                  <PoolWindowRow
                     key={`${window.kind}:${window.id}`}
                     pool={window}
                     color={colors[usageProviderKind(pool.driver) ?? "codex"]}
@@ -527,6 +694,7 @@ export function UsageLimitsSection({
                     label={details?.label}
                     description={details?.description}
                     wide={wide}
+                    showTopDivider={index > 0}
                   />
                 );
               })}
@@ -534,6 +702,13 @@ export function UsageLimitsSection({
           </Fragment>
         );
       })}
+      {extraSubscriptions.map((card) => (
+        <MobileCompanionSubscriptionCard
+          key={`companion:${card.provider}:${card.accountKey}`}
+          card={card}
+          now={now}
+        />
+      ))}
       {externalLinks.map((link) => (
         <View key={link.url} className="gap-3 rounded-xl border border-border-subtle p-4">
           <Text className="text-base font-t3-medium text-foreground">{link.label}</Text>

@@ -11,6 +11,14 @@ import {
   remainingPercent,
   type ResetCreditChoice,
 } from "@t3tools/shared/usageLimits";
+import {
+  companionBrandFor,
+  companionRemainingPercent,
+  filterCompanionSubscriptionsForOfficialUsage,
+  formatCompanionResetCountdown,
+  resolveCompanionSubscriptionsUrl,
+  type CompanionSubscriptionCard,
+} from "@t3tools/shared/companionSubscriptions";
 import { T, useGT, useMessages } from "gt-react";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
@@ -21,6 +29,7 @@ import {
   type ReactNode,
   type RefObject,
   use,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -403,16 +412,28 @@ function SegmentTriggers({
             type="button"
             style={{ gridColumn: index, gridRow: 1, ...paceMark?.gappedTrack }}
             aria-label={segmentLabel}
-            className="relative h-5 min-w-0 cursor-pointer rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border @2xl/pool:h-8"
+            className={cn(
+              "relative min-w-0 cursor-pointer bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border",
+              showAccountName ? "h-5 rounded-md @2xl/pool:h-6" : "h-3 rounded-full",
+            )}
           />
         }
       >
-        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-md">
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-0 overflow-hidden",
+            showAccountName ? "rounded-md" : "rounded-full",
+          )}
+        >
           {/* Clipped inside the rounded clip so the bar's own corners keep their antialiasing. */}
           <div className="absolute inset-0" style={paceMark?.gap}>
             <div
               aria-hidden
-              className="absolute inset-y-0 left-0 rounded-md opacity-35"
+              className={cn(
+                "absolute inset-y-0 left-0 opacity-45",
+                showAccountName ? "rounded-md" : "rounded-full",
+              )}
               style={{ width: `${remaining}%`, backgroundColor: color }}
             />
             {remaining < 100 && reset && refillPercent > 0 ? (
@@ -436,46 +457,45 @@ function SegmentTriggers({
             style={paceMark.tick}
           />
         ) : null}
-        <span
-          aria-hidden
-          className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
-        >
-          {index}
-        </span>
-        <div className="relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs @2xl/pool:flex">
-          {showAccountName ? (
-            <AccountName
-              account={account}
-              className="min-w-0 truncate font-medium text-foreground"
-            />
-          ) : null}
-          {/* A single-account bar repeats the headline percentage. */}
-          {showAccountName ? (
-            <span className="shrink-0 font-semibold text-foreground tabular-nums">
-              {remaining}%
+        {showAccountName ? (
+          <>
+            <span
+              aria-hidden
+              className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
+            >
+              {index}
             </span>
-          ) : null}
-          {resetsIn || credits ? (
-            <span className="ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap text-foreground tabular-nums">
-              {refillIn ?? ""}
-              {credits ? (
-                <>
-                  {resetsIn ? (
-                    <span aria-hidden className="text-muted-foreground">
-                      ·
-                    </span>
+            <div className="relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs @2xl/pool:flex">
+              <AccountName
+                account={account}
+                className="min-w-0 truncate font-medium text-foreground"
+              />
+              <span className="shrink-0 font-semibold text-foreground tabular-nums">
+                {remaining}%
+              </span>
+              {resetsIn || credits ? (
+                <span className="ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap text-foreground tabular-nums">
+                  {refillIn ?? ""}
+                  {credits ? (
+                    <>
+                      {resetsIn ? (
+                        <span aria-hidden className="text-muted-foreground">
+                          ·
+                        </span>
+                      ) : null}
+                      <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
+                        <TicketIcon className="size-3" aria-hidden />
+                        {credits}
+                      </span>
+                    </>
                   ) : null}
-                  <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
-                    <TicketIcon className="size-3" aria-hidden />
-                    {credits}
-                  </span>
-                </>
+                </span>
               ) : null}
-            </span>
-          ) : null}
-        </div>
+            </div>
+          </>
+        ) : null}
       </PopoverTrigger>
-      <LegendRow payload={payload} color={color} now={now} index={index} />
+      {showAccountName ? <LegendRow payload={payload} color={color} now={now} index={index} /> : null}
     </>
   );
 }
@@ -591,47 +611,62 @@ function PoolBar({
   );
 }
 
-function PoolWindowCard({
+function PoolWindowRow({
   pool,
   color,
   now,
   label,
   description,
+  showTopDivider,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
   readonly label?: string | null | undefined;
   readonly description?: string | undefined;
+  readonly showTopDivider: boolean;
 }) {
+  const m = useMessages();
   const nextRefill = pool.resets.find((reset) => reset.at > now && reset.restoresPercent > 0);
+  const singleMember = pool.columns.length === 1 ? pool.columns[0] : undefined;
+  const singleResetsIn = singleMember?.window
+    ? formatResetsIn(singleMember.window, now, m, "refill")
+    : null;
+  const singleCredits = singleMember?.account.limits.resetCredits?.availableCount ?? 0;
   return (
-    <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
-      <div className="flex flex-col gap-1">
-        {label !== null ? (
-          <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
-        ) : null}
-        <span className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
-            {pool.remainingPercent}%
-          </span>
-          <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <span>
-              <T context="remaining usage percentage">left</T>
+    <div
+      className={cn(
+        "flex flex-col gap-1.5",
+        showTopDivider && "border-t border-border/50 pt-2",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {label !== null ? (
+            <span className="truncate font-medium text-foreground">{label ?? pool.label}</span>
+          ) : null}
+          {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
+          {nextRefill && pool.columns.length > 1 ? (
+            <span className="shrink-0 text-2xs font-medium text-muted-foreground tabular-nums">
+              ↻ +{nextRefill.restoresPercent}%
             </span>
-            {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
-          </span>
+          ) : null}
         </span>
-        {nextRefill && pool.columns.length > 1 ? (
-          <span className="text-xs font-medium text-foreground tabular-nums">
-            ↻ +{nextRefill.restoresPercent}%
-          </span>
-        ) : null}
+        <span className="flex shrink-0 items-center gap-2 tabular-nums">
+          {singleResetsIn ? (
+            <span className="text-2xs text-muted-foreground">{singleResetsIn}</span>
+          ) : null}
+          {singleCredits > 0 ? (
+            <span className="inline-flex items-center gap-0.5 text-2xs font-semibold text-foreground">
+              <TicketIcon className="size-3" aria-hidden />
+              {singleCredits}
+            </span>
+          ) : null}
+          <span className="text-sm font-semibold text-foreground">{pool.remainingPercent}%</span>
+        </span>
       </div>
       <PoolBar pool={pool} color={color} now={now} />
-      {description ? (
-        <p className="text-xs text-muted-foreground md:col-span-2">{description}</p>
-      ) : null}
+      {description ? <p className="text-2xs text-muted-foreground">{description}</p> : null}
     </div>
   );
 }
@@ -641,32 +676,192 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
   const m = useMessages();
+  const sharedEnvLabels = [
+    ...new Set(pool.accounts.flatMap((account) => account.environments.map((env) => env.label))),
+  ];
+  const primaryPlan = pool.accounts.length === 1 ? (pool.accounts[0]?.plan ?? null) : null;
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <ProviderInstanceIcon
-          driverKind={pool.driver}
-          displayName={label}
-          indicatorBackground="var(--background)"
-          className="size-5"
-          iconClassName="size-4 text-foreground/80"
-        />
-        {label}
-      </h2>
-      {windows.map((window) => {
+    <section className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/40 p-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
+          <ProviderInstanceIcon
+            driverKind={pool.driver}
+            displayName={label}
+            indicatorBackground="var(--background)"
+            className="size-4.5 shrink-0"
+            iconClassName="size-3.5 text-foreground/85"
+          />
+          <span className="truncate">{label}</span>
+          {primaryPlan ? (
+            <span className="truncate text-2xs font-normal text-muted-foreground">
+              {primaryPlan}
+            </span>
+          ) : null}
+        </h2>
+        <div className="flex shrink-0 items-center gap-1.5 text-2xs">
+          {pool.accounts.length > 1 ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground tabular-nums">
+              {pool.accounts.length} 账号
+            </span>
+          ) : null}
+          {sharedEnvLabels.length > 1 ? (
+            <span
+              title={sharedEnvLabels.join(", ")}
+              className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground tabular-nums"
+            >
+              {sharedEnvLabels.length} 机共用
+            </span>
+          ) : sharedEnvLabels.length === 1 ? (
+            <span className="truncate max-w-28 text-muted-foreground">{sharedEnvLabels[0]}</span>
+          ) : null}
+        </div>
+      </div>
+      {windows.map((window, index) => {
         const details =
           pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
         return (
-          <PoolWindowCard
+          <PoolWindowRow
             key={`${window.kind}:${window.id}`}
             pool={window}
             color={color}
             now={now}
             label={details?.label}
             description={details?.description}
+            showTopDivider={index > 0}
           />
         );
       })}
+    </section>
+  );
+}
+
+function useCompanionSubscriptions(): readonly CompanionSubscriptionCard[] {
+  const [cards, setCards] = useState<readonly CompanionSubscriptionCard[]>([]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads centralized fleet subscriptions from Companion Gateway on mount
+  useEffect(() => {
+    const url = resolveCompanionSubscriptionsUrl(
+      typeof window !== "undefined" ? window.location.origin : null,
+      (import.meta.env.VITE_COMPANION_ORIGIN as string | undefined) ?? null,
+    );
+    if (!url) return;
+    const controller = new AbortController();
+    void fetch(url, { credentials: "include", signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { subscriptions?: CompanionSubscriptionCard[] } | null) => {
+        if (data && Array.isArray(data.subscriptions)) {
+          setCards(data.subscriptions);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+  return cards;
+}
+
+function CompanionSubscriptionSection({
+  card,
+  now,
+}: {
+  readonly card: CompanionSubscriptionCard;
+  readonly now: number;
+}) {
+  const brand = companionBrandFor(card.provider);
+  const currencyPrefix =
+    card.currency === "CNY" ? "¥" : card.currency === "USD" ? "$" : card.currency ? `${card.currency} ` : "";
+  const hasBalance = card.balance !== null && card.balance !== undefined && Number.isFinite(card.balance);
+  const isLowBalance = hasBalance && (card.balance as number) <= 0;
+  return (
+    <section
+      className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/40 p-3.5"
+      style={{ borderTopWidth: "2px", borderTopColor: brand.color }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
+          <span
+            aria-hidden
+            className="inline-flex size-5 shrink-0 items-center justify-center rounded-md text-[10px] font-bold"
+            style={{
+              backgroundColor: `${brand.color}22`,
+              color: brand.color,
+              border: `1px solid ${brand.color}55`,
+            }}
+          >
+            {brand.shortCode}
+          </span>
+          <span className="truncate">{brand.label}</span>
+          {card.planName ? (
+            <span className="truncate text-2xs font-normal text-muted-foreground">
+              {card.planName}
+            </span>
+          ) : null}
+        </h2>
+        <div className="flex shrink-0 items-center gap-1.5 text-2xs">
+          {card.machines.length > 1 ? (
+            <span
+              title={card.machines.join(", ")}
+              className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground tabular-nums"
+            >
+              {card.machines.length} 机共用
+            </span>
+          ) : (
+            <span className="truncate max-w-28 text-muted-foreground">{card.polledBy}</span>
+          )}
+        </div>
+      </div>
+
+      {hasBalance ? (
+        <div className="flex items-baseline justify-between gap-2 pt-0.5">
+          <span className="text-xs text-muted-foreground">账户余额</span>
+          <span
+            className={cn(
+              "text-sm font-semibold tabular-nums",
+              isLowBalance ? "text-destructive" : "text-foreground",
+            )}
+          >
+            {currencyPrefix}
+            {(card.balance as number).toFixed(2)}
+            {isLowBalance ? " · 余额不足" : ""}
+          </span>
+        </div>
+      ) : null}
+
+      {card.windows.map((win, index) => {
+        const remaining = companionRemainingPercent(win.usedPercent);
+        const resetsIn = formatCompanionResetCountdown(win.resetsAt, now);
+        return (
+          <div
+            key={`${card.provider}:${win.key}:${index}`}
+            className={cn(
+              "flex flex-col gap-1.5",
+              (index > 0 || hasBalance) && "border-t border-border/50 pt-2",
+            )}
+          >
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate font-medium text-foreground">{win.label}</span>
+              <span className="flex shrink-0 items-center gap-2 tabular-nums">
+                {resetsIn ? (
+                  <span className="text-2xs text-muted-foreground">↻ {resetsIn}</span>
+                ) : null}
+                <span className="text-sm font-semibold text-foreground">
+                  {remaining !== null ? `${remaining}%` : "—"}
+                </span>
+              </span>
+            </div>
+            <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+              {remaining !== null && remaining > 0 ? (
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full opacity-75"
+                  style={{ width: `${remaining}%`, backgroundColor: brand.color }}
+                />
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+
+      {card.error && card.windows.length === 0 && !hasBalance ? (
+        <p className="text-2xs text-amber-500/90 break-words">{card.error}</p>
+      ) : null}
     </section>
   );
 }
@@ -683,21 +878,40 @@ export function UsageLimitsPooled({
   const [segmentPopover] = useState(() => PopoverCreateHandle<SegmentPayload>());
   const segmentPopoverActions = useRef<PopoverPrimitive.Root.Actions | null>(null);
   const pools = collectLimitPools(collectLimitAccounts(presentations), now);
+  const companionSubscriptions = useCompanionSubscriptions();
+  const extraSubscriptions = filterCompanionSubscriptionsForOfficialUsage(
+    companionSubscriptions,
+    new Set(pools.map((pool) => String(pool.driver))),
+  );
   const notices = collectLimitNotices(presentations, m);
   const externalLinks = collectExternalUsageLinks(presentations, m);
   return (
-    <div className="flex flex-col gap-8">
-      {pools.length === 0 && notices.length === 0 && externalLinks.length === 0 ? (
+    <div className="flex flex-col gap-4">
+      {pools.length === 0 &&
+      extraSubscriptions.length === 0 &&
+      notices.length === 0 &&
+      externalLinks.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           <T>No provider on the selected environments reports subscription limits.</T>
         </p>
       ) : null}
       <SegmentPopoverContext value={segmentPopover}>
-        {pools.map((pool) => (
-          <Fragment key={pool.driver}>
-            <PoolSection pool={pool} now={now} />
-          </Fragment>
-        ))}
+        {pools.length > 0 || extraSubscriptions.length > 0 ? (
+          <div className="grid items-start gap-3 md:grid-cols-2">
+            {pools.map((pool) => (
+              <Fragment key={pool.driver}>
+                <PoolSection pool={pool} now={now} />
+              </Fragment>
+            ))}
+            {extraSubscriptions.map((card) => (
+              <CompanionSubscriptionSection
+                key={`companion:${card.provider}:${card.accountKey}`}
+                card={card}
+                now={now}
+              />
+            ))}
+          </div>
+        ) : null}
       </SegmentPopoverContext>
       <Popover handle={segmentPopover} actionsRef={segmentPopoverActions}>
         {({ payload }) =>

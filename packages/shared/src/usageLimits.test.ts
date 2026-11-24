@@ -441,6 +441,103 @@ describe("pools", () => {
     expect(accounts[0]?.limits.windows[0]?.usedPercent).toBe(30);
   });
 
+  it("merges cross-host reports when one has email+fingerprint and another only has fingerprint", () => {
+    const antigravity = ProviderDriverKind.make("antigravity");
+    const withEmail = provider({
+      driver: antigravity,
+      instanceId: ProviderInstanceId.make("antigravity"),
+      auth: { status: "authenticated", email: "owner@example.com" },
+      usageLimits: {
+        checkedAt,
+        credentialFingerprint: "shared-fp-1",
+        windows: [{ ...window, id: "gemini-weekly", usedPercent: 18 }],
+      },
+    });
+    const withoutEmail = provider({
+      driver: antigravity,
+      instanceId: ProviderInstanceId.make("antigravity"),
+      auth: { status: "authenticated" },
+      usageLimits: {
+        checkedAt: "2026-09-03T11:45:00.000Z",
+        credentialFingerprint: "shared-fp-1",
+        windows: [{ ...window, id: "gemini-weekly", usedPercent: 22 }],
+      },
+    });
+    const accounts = collectLimitAccounts(
+      new Map([
+        [EnvironmentId.make("env-a"), { ...laptop, serverConfig: { providers: [withEmail] } }],
+        [
+          EnvironmentId.make("env-b"),
+          { entry: { target: { label: "Desktop" } }, serverConfig: { providers: [withoutEmail] } },
+        ],
+      ]),
+    );
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]?.email).toBe("owner@example.com");
+    expect(accounts[0]?.limits.windows[0]?.usedPercent).toBe(22);
+    expect(accounts[0]?.environments.map((env) => env.label)).toEqual(["Laptop", "Desktop"]);
+  });
+
+  it("deduplicates cross-host shared accounts lacking email/fingerprint via matching timed windows, while keeping distinct accounts separate", () => {
+    const antigravity = ProviderDriverKind.make("antigravity");
+    const hostA = provider({
+      driver: antigravity,
+      instanceId: ProviderInstanceId.make("antigravity"),
+      auth: { status: "authenticated", label: "Google account" },
+      usageLimits: {
+        checkedAt,
+        windows: [
+          { ...window, id: "gemini-weekly", usedPercent: 25, resetsAt: "2026-09-06T12:00:00.000Z" },
+        ],
+      },
+    });
+    const hostBSameAccount = provider({
+      driver: antigravity,
+      instanceId: ProviderInstanceId.make("antigravity"),
+      auth: { status: "authenticated", label: "Google account" },
+      usageLimits: {
+        checkedAt: "2026-09-03T11:30:00.000Z",
+        windows: [
+          { ...window, id: "gemini-weekly", usedPercent: 26, resetsAt: "2026-09-06T12:00:20.000Z" },
+        ],
+      },
+    });
+    const hostCDifferentAccount = provider({
+      driver: antigravity,
+      instanceId: ProviderInstanceId.make("antigravity"),
+      auth: { status: "authenticated", label: "Google account" },
+      usageLimits: {
+        checkedAt,
+        windows: [
+          { ...window, id: "gemini-weekly", usedPercent: 25, resetsAt: "2026-09-07T08:00:00.000Z" },
+        ],
+      },
+    });
+    const accounts = collectLimitAccounts(
+      new Map([
+        [EnvironmentId.make("env-a"), { ...laptop, serverConfig: { providers: [hostA] } }],
+        [
+          EnvironmentId.make("env-b"),
+          {
+            entry: { target: { label: "Desktop" } },
+            serverConfig: { providers: [hostBSameAccount] },
+          },
+        ],
+        [
+          EnvironmentId.make("env-c"),
+          {
+            entry: { target: { label: "Server" } },
+            serverConfig: { providers: [hostCDifferentAccount] },
+          },
+        ],
+      ]),
+    );
+    expect(accounts).toHaveLength(2);
+    expect(accounts[0]?.environments.map((env) => env.label)).toEqual(["Laptop", "Desktop"]);
+    expect(accounts[0]?.limits.windows[0]?.usedPercent).toBe(26);
+    expect(accounts[1]?.environments.map((env) => env.label)).toEqual(["Server"]);
+  });
+
   it("takes windows from a fresher hub read but credits and redeem from the native instance", () => {
     const native = provider({
       driver: claude,
