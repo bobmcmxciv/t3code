@@ -4,6 +4,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
+  collectHttpQuotaSources,
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
@@ -614,6 +615,7 @@ export function UsageLimitsSection({
     companionSubscriptions,
     new Set(pools.map((pool) => String(pool.driver))),
   );
+  const quotaSources = collectHttpQuotaSources(selected);
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
   const externalLinks = collectExternalUsageLinks(selected, m);
@@ -625,13 +627,36 @@ export function UsageLimitsSection({
       extraSubscriptions.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
-      externalLinks.length === 0 ? (
+      externalLinks.length === 0 &&
+      quotaSources.length === 0 ? (
         <Text className="py-10 text-center text-sm text-foreground-muted">
           {selected.size === 0
             ? gt("Select an environment to see limits.")
             : gt("No provider on the selected environments reports subscription limits.")}
         </Text>
       ) : null}
+      {quotaSources.map((source) => (
+        <View key={source.key} className="gap-3 rounded-[24px] bg-grouped-card p-4">
+          <Text className="text-base font-t3-medium text-foreground">{source.label}</Text>
+          {source.quotaAccounts?.map((account) => (
+            <View key={account.id} className="gap-1">
+              <Text className="text-sm font-t3-medium text-foreground">{account.label}</Text>
+              {account.windows.map((window) => {
+                const reset = resetLabels(window, now, m);
+                return (
+                  <View key={window.id} className="flex-row justify-between gap-3">
+                    <Text className="shrink text-sm text-foreground-muted">{window.label}</Text>
+                    <Text className="text-sm text-foreground-muted">
+                      {gt("{remaining}% left", { remaining: remainingPercent(window) })}
+                      {reset ? ` · ${reset.compact}` : ""}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      ))}
       {pools.map((pool) => {
         const windows = displayLimitWindows(pool);
         const sharedEnvLabels = [
