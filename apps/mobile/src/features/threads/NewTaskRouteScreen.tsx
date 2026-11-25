@@ -226,7 +226,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       .map((environment) => environment.environmentId),
   );
   const environmentLabelById = new Map(
-    connectedEnvironments.map((environment) => [environment.environmentId, environment.label] as const),
+    connectedEnvironments.map(
+      (environment) => [environment.environmentId, environment.environmentLabel] as const,
+    ),
   );
   const [machineFilterId, setMachineFilterId] = useState<EnvironmentId | null>(
     () => selectedEnvironmentId ?? null,
@@ -238,7 +240,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       ).length;
       return {
         environmentId: environment.environmentId,
-        label: environment.label,
+        label: environment.environmentLabel,
         machine: resolveEnvironmentMachineKind(serverConfigs.get(environment.environmentId) ?? null),
         count,
       };
