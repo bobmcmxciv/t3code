@@ -180,9 +180,9 @@ export function planProjectCommand(input: {
       if (project === undefined) return missingProject();
       if (
         command.projectIcon?.kind === "monogram" &&
-        Array.from(monogramSegmenter.segment(command.projectIcon.text)).length > 2
+        Array.from(monogramSegmenter.segment(command.projectIcon.text)).length > 4
       ) {
-        return invariant("Project monograms must contain at most two characters.");
+        return invariant("Project monograms must contain at most four characters.");
       }
       if (command.scripts !== undefined) {
         // Allow editing or removing persisted invalid script ids, while rejecting new invalid ids.

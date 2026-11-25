@@ -1,6 +1,10 @@
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
-import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
+import {
+  resolveEnvironmentMachineKind,
+  type EnvironmentId,
+  type ScopedProjectRef,
+} from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { T, useGT, Var } from "gt-react";
@@ -9,6 +13,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
+import { cn } from "~/lib/utils";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
@@ -23,13 +28,10 @@ import {
   pickableProjectGroups,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
-import {
-  buildSidebarProjectPickerEntries,
-  projectGroupsSpanEnvironments,
-} from "~/sidebarProjectGrouping";
+import { buildSidebarProjectPickerEntries } from "~/sidebarProjectGrouping";
 import { useProjects } from "~/state/entities";
-import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
-import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
+import { useEnvironments } from "~/state/environments";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { isProjectPinShortcut, ProjectPinButton } from "../ProjectPinButton";
 import { useSortedProjectGroups } from "../CommandPaletteLookups";
@@ -70,7 +72,6 @@ export function DraftHeroHeadline({
   const gt = useGT();
   const projects = useProjects();
   const { environments } = useEnvironments();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const setLogicalProjectDraftThreadId = useComposerDraftStore(
     (store) => store.setLogicalProjectDraftThreadId,
@@ -86,6 +87,7 @@ export function DraftHeroHeadline({
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
+  const [selectedMachineId, setSelectedMachineId] = useState<EnvironmentId | null>(null);
   const pickerFilter = useComboboxFilter();
   const highlightedPickerValueRef = useRef<string | null>(null);
   const { canPinProjectGroup, toggleProjectGroupPin } = useProjectPin();
@@ -94,7 +96,6 @@ export function DraftHeroHeadline({
     environments.map((environment) => [environment.environmentId, environment.label] as const),
   );
   const projectGroups = useSortedProjectGroups(environmentLabelById);
-  const showProjectEnvironments = projectGroupsSpanEnvironments(projectGroups);
   const environmentMachineById = new Map(
     environments.map(
       (environment) =>
@@ -127,6 +128,31 @@ export function DraftHeroHeadline({
     ({ targetProject }) =>
       !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
   );
+  const machineOptions = environments
+    .map((environment) => {
+      const count = menuEntries.filter(({ group }) =>
+        group.memberProjects.some((member) => member.environmentId === environment.environmentId),
+      ).length;
+      return {
+        environmentId: environment.environmentId,
+        label: environment.label,
+        machine: resolveEnvironmentMachineKind(environment.serverConfig),
+        count,
+      };
+    })
+    .filter((option) => option.count > 0);
+  const hasMultipleMachines = machineOptions.length > 1;
+  const effectiveMachineFilter =
+    selectedMachineId !== null &&
+    machineOptions.some((option) => option.environmentId === selectedMachineId)
+      ? selectedMachineId
+      : null;
+  const machineFilteredEntries =
+    effectiveMachineFilter === null
+      ? menuEntries
+      : menuEntries.filter(({ group }) =>
+          group.memberProjects.some((member) => member.environmentId === effectiveMachineFilter),
+        );
   const activeProject =
     activeProjectRef === null
       ? null
@@ -144,7 +170,10 @@ export function DraftHeroHeadline({
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
     [
-      ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
+      ...machineFilteredEntries.map(({ group }) => ({
+        value: group.projectKey,
+        label: group.displayName,
+      })),
       { value: ADD_PROJECT_VALUE, label: gt("Add project") },
     ],
     (item) => item.value,
@@ -154,11 +183,22 @@ export function DraftHeroHeadline({
   const filteredPickerItems =
     pickerSearch.length === 0
       ? pickerItems
-      : pickerItems.filter(
-          (item) =>
-            item.value !== ADD_PROJECT_VALUE &&
-            pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label),
-        );
+      : pickerItems.filter((item) => {
+          if (item.value === ADD_PROJECT_VALUE) return false;
+          if (pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label)) {
+            return true;
+          }
+          const entry = projectEntryByKey.get(item.value);
+          if (!entry) return false;
+          const envLabels = entry.group.memberProjects
+            .map((member) => environmentLabelById.get(member.environmentId) ?? member.environmentLabel ?? "")
+            .join(" ");
+          return pickerFilter.contains(
+            { value: item.value, label: envLabels },
+            pickerSearch,
+            (candidate) => candidate.label,
+          );
+        });
   const selectedPickerItem = pickerItems.find((item) => item.value === activeProjectKey) ?? null;
 
   // The picker can change the draft's target while the no-project home is
@@ -226,10 +266,29 @@ export function DraftHeroHeadline({
           return;
         }
         const entry = projectEntryByKey.get(item.value);
-        if (!entry || item.value === activeProjectKey) {
+        if (!entry) {
           return;
         }
-        selectProject(entry.targetProject, entry.group.projectKey);
+        const matchedTarget =
+          effectiveMachineFilter !== null
+            ? (projects.find(
+                (candidate) =>
+                  candidate.environmentId === effectiveMachineFilter &&
+                  entry.group.memberProjectRefs.some(
+                    (ref) =>
+                      ref.environmentId === candidate.environmentId &&
+                      ref.projectId === candidate.id,
+                  ),
+              ) ?? entry.targetProject)
+            : entry.targetProject;
+        if (
+          activeProjectRef &&
+          matchedTarget.environmentId === activeProjectRef.environmentId &&
+          matchedTarget.id === activeProjectRef.projectId
+        ) {
+          return;
+        }
+        selectProject(matchedTarget, entry.group.projectKey);
       }}
     >
       <Tooltip>
@@ -253,7 +312,7 @@ export function DraftHeroHeadline({
           <TooltipPopup side="top">{activeProjectTitle}</TooltipPopup>
         ) : null}
       </Tooltip>
-      <ComboboxPopup align="center" className="w-72 overflow-hidden">
+      <ComboboxPopup align="center" className="w-80 overflow-hidden sm:w-96">
         <ComboboxSearchInput
           aria-label={gt("Search projects")}
           placeholder={gt("Search projects...")}
@@ -270,12 +329,63 @@ export function DraftHeroHeadline({
             toggleProjectGroupPin(group);
           }}
         />
+        {hasMultipleMachines ? (
+          <div
+            data-testid="draft-project-machine-filter"
+            className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-muted/25 px-2.5 py-2"
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedMachineId(null)}
+              className={cn(
+                "shrink-0 cursor-pointer rounded-full px-2.5 py-0.5 text-2xs font-medium transition-colors",
+                effectiveMachineFilter === null
+                  ? "bg-foreground text-background"
+                  : "bg-background/80 text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              <T>All machines</T>
+            </button>
+            {machineOptions.map((option) => {
+              const isSelected = effectiveMachineFilter === option.environmentId;
+              return (
+                <button
+                  key={option.environmentId}
+                  type="button"
+                  onClick={() => setSelectedMachineId(option.environmentId)}
+                  className={cn(
+                    "inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 py-0.5 text-2xs font-medium transition-colors",
+                    isSelected
+                      ? "bg-foreground text-background"
+                      : "bg-background/80 text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <EnvironmentMachineIcon
+                    aria-hidden
+                    kind={option.machine}
+                    className="size-3 shrink-0"
+                  />
+                  <span className="max-w-28 truncate">{option.label}</span>
+                  <span className={cn("tabular-nums opacity-65")}>{option.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         <ComboboxEmpty>
           <T>No matching projects.</T>
         </ComboboxEmpty>
         <ComboboxList>
           {(item: PickerItem) => {
             const entry = projectEntryByKey.get(item.value);
+            const rowEnvironmentId =
+              effectiveMachineFilter ?? entry?.targetProject.environmentId ?? null;
+            const rowEnvironmentLabel = rowEnvironmentId
+              ? (environmentLabelById.get(rowEnvironmentId) ?? null)
+              : null;
+            const rowMachineKind = rowEnvironmentId
+              ? (environmentMachineById.get(rowEnvironmentId) ?? "server")
+              : "server";
             return (
               <ComboboxItem key={item.value} hideIndicator value={item}>
                 {item.value === ADD_PROJECT_VALUE ? (
@@ -297,12 +407,15 @@ export function DraftHeroHeadline({
                     onToggle={() => toggleProjectGroupPin(entry.group)}
                   />
                 ) : null}
-                {entry && showProjectEnvironments ? (
-                  <ProjectEnvironmentBadge
-                    group={entry.group}
-                    primaryEnvironmentId={primaryEnvironmentId}
-                    machineByEnvironmentId={environmentMachineById}
-                  />
+                {entry && hasMultipleMachines && rowEnvironmentLabel ? (
+                  <span className="inline-flex max-w-28 shrink-0 items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-2xs text-muted-foreground">
+                    <EnvironmentMachineIcon
+                      aria-hidden
+                      kind={rowMachineKind}
+                      className="size-3 shrink-0"
+                    />
+                    <span className="truncate">{rowEnvironmentLabel}</span>
+                  </span>
                 ) : null}
               </ComboboxItem>
             );
@@ -359,6 +472,39 @@ export function DraftHeroHeadline({
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
+      {hasMultipleMachines && shouldShowProjectMenu ? (
+        <div
+          data-testid="draft-hero-machine-bar"
+          className="pointer-events-auto mb-3 flex max-w-full flex-wrap items-center justify-center gap-1.5"
+        >
+          {machineOptions.map((option) => {
+            const isCurrentMachine = activeProjectRef?.environmentId === option.environmentId;
+            return (
+              <button
+                key={option.environmentId}
+                type="button"
+                onClick={() => {
+                  setSelectedMachineId(option.environmentId);
+                  setPickerOpen(true);
+                }}
+                className={cn(
+                  "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                  isCurrentMachine
+                    ? "border-foreground/25 bg-accent/80 text-foreground shadow-2xs"
+                    : "border-border/60 bg-background/70 text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground",
+                )}
+              >
+                <EnvironmentMachineIcon
+                  aria-hidden
+                  kind={option.machine}
+                  className="size-3.5 shrink-0"
+                />
+                <span className="max-w-36 truncate">{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       {hasResolvedProject && !isScratchDraft ? (
         <DraftHeroProjectHeading projectName={activeProjectTitle ?? gt("Choose a project")}>
           {projectSelector}

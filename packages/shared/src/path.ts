@@ -219,3 +219,157 @@ export function resolveWorkspaceFilePath(path: string, workspaceRoot: string): s
     ? `${base}\\${path.replaceAll("/", "\\")}`
     : `${base}/${path}`;
 }
+
+export interface QuickBrowsePathOption {
+  readonly path: string;
+  readonly label: string;
+}
+
+export interface BrowsePathBreadcrumb {
+  readonly label: string;
+  readonly path: string;
+}
+
+function parentDirectoryOf(rawPath: string): string | null {
+  const trimmed = trimTrailingPathSeparators(rawPath.trim());
+  if (trimmed.length === 0 || isRootPath(trimmed) || trimmed === "~") {
+    return null;
+  }
+  const lastSep = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  if (lastSep < 0) return null;
+  if (lastSep === 0) return "/";
+  const parent = trimmed.slice(0, lastSep);
+  if (/^[a-zA-Z]:$/.test(parent)) {
+    return `${parent}\\`;
+  }
+  return parent;
+}
+
+function ensureTrailingBrowseSeparator(path: string, isWindows: boolean): string {
+  if (path === "~") return isWindows ? "~\\" : "~/";
+  if (path.endsWith("/") || path.endsWith("\\")) return path;
+  return isWindows || isWindowsDrivePath(path) ? `${path}\\` : `${path}/`;
+}
+
+/**
+ * Derive quick-jump directory shortcuts for a machine's folder browser:
+ * 1. Most-used parent directories of existing projects on that host
+ * 2. Configured base directory (`addProjectBaseDirectory`)
+ * 3. Home (`~`) and Windows drive roots (`C:\`, `D:\`, ...)
+ */
+export function deriveQuickBrowsePaths(input: {
+  readonly projectWorkspaceRoots: ReadonlyArray<string>;
+  readonly baseDirectory?: string | null | undefined;
+  readonly isWindows: boolean;
+  readonly maxItems?: number;
+}): ReadonlyArray<QuickBrowsePathOption> {
+  const maxItems = input.maxItems ?? 8;
+  const counts = new Map<string, { path: string; count: number }>();
+  const drives = new Set<string>();
+
+  for (const root of input.projectWorkspaceRoots) {
+    const trimmed = root.trim();
+    if (!trimmed) continue;
+    if (isWindowsDrivePath(trimmed)) {
+      drives.add(`${trimmed[0]!.toUpperCase()}:\\`);
+    }
+    const parent = parentDirectoryOf(trimmed);
+    if (!parent) continue;
+    const normKey = normalizeProjectPathForComparison(parent);
+    const existing = counts.get(normKey);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      counts.set(normKey, { path: parent, count: 1 });
+    }
+  }
+
+  const rankedParents = [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.path.localeCompare(b.path))
+    .map((entry) => entry.path);
+
+  const candidates: Array<{ path: string; label?: string }> = [];
+  for (const parent of rankedParents) {
+    candidates.push({ path: parent });
+  }
+  if (input.baseDirectory && input.baseDirectory.trim().length > 0) {
+    candidates.push({ path: input.baseDirectory.trim() });
+  }
+  candidates.push({ path: "~", label: "~ (Home)" });
+  if (input.isWindows) {
+    for (const drive of [...drives].sort()) {
+      candidates.push({ path: drive, label: drive });
+    }
+    if (!drives.has("C:\\")) candidates.push({ path: "C:\\", label: "C:\\" });
+    if (!drives.has("D:\\")) candidates.push({ path: "D:\\", label: "D:\\" });
+  } else {
+    candidates.push({ path: "/", label: "/" });
+  }
+
+  const seen = new Set<string>();
+  const options: QuickBrowsePathOption[] = [];
+  for (const candidate of candidates) {
+    const browsePath = ensureTrailingBrowseSeparator(candidate.path, input.isWindows);
+    const dedupeKey =
+      candidate.path === "~" ? "~" : normalizeProjectPathForComparison(candidate.path);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    const cleanDisplay = trimTrailingPathSeparators(candidate.path);
+    options.push({
+      path: browsePath,
+      label: candidate.label ?? (cleanDisplay.length > 0 ? cleanDisplay : candidate.path),
+    });
+    if (options.length >= maxItems) break;
+  }
+  return options;
+}
+
+/** Split an absolute or home-relative directory path into clickable cumulative breadcrumbs. */
+export function splitBrowsePathBreadcrumbs(
+  rawPath: string,
+  isWindows: boolean,
+): ReadonlyArray<BrowsePathBreadcrumb> {
+  const trimmed = rawPath.trim();
+  if (trimmed.length === 0) return [];
+  const sep = isWindows || isWindowsDrivePath(trimmed) ? "\\" : "/";
+
+  if (trimmed === "~" || trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    const rest = trimmed.slice(1).replace(/^[\\/]+/, "").replace(/[\\/]+$/, "");
+    const crumbs: BrowsePathBreadcrumb[] = [{ label: "~", path: `~${sep}` }];
+    if (!rest) return crumbs;
+    let acc = "~";
+    for (const part of rest.split(/[\\/]+/).filter(Boolean)) {
+      acc = `${acc}${sep}${part}`;
+      crumbs.push({ label: part, path: `${acc}${sep}` });
+    }
+    return crumbs;
+  }
+
+  const driveMatch = /^([a-zA-Z]:)(?:[\\/](.*))?$/.exec(trimmed);
+  if (driveMatch) {
+    const drive = driveMatch[1]!.toUpperCase();
+    const rest = (driveMatch[2] ?? "").replace(/[\\/]+$/, "");
+    const crumbs: BrowsePathBreadcrumb[] = [{ label: `${drive}\\`, path: `${drive}\\` }];
+    if (!rest) return crumbs;
+    let acc = drive;
+    for (const part of rest.split(/[\\/]+/).filter(Boolean)) {
+      acc = `${acc}\\${part}`;
+      crumbs.push({ label: part, path: `${acc}\\` });
+    }
+    return crumbs;
+  }
+
+  if (trimmed.startsWith("/")) {
+    const rest = trimmed.slice(1).replace(/\/+$/, "");
+    const crumbs: BrowsePathBreadcrumb[] = [{ label: "/", path: "/" }];
+    if (!rest) return crumbs;
+    let acc = "";
+    for (const part of rest.split("/").filter(Boolean)) {
+      acc = `${acc}/${part}`;
+      crumbs.push({ label: part, path: `${acc}/` });
+    }
+    return crumbs;
+  }
+
+  return [];
+}

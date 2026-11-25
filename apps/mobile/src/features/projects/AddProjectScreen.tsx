@@ -50,7 +50,11 @@ import {
   inferProjectTitleFromPath,
   isWindowsPlatform,
 } from "@t3tools/client-runtime/state/projects";
-import { resolvePastedPath } from "@t3tools/shared/path";
+import {
+  deriveQuickBrowsePaths,
+  resolvePastedPath,
+  splitBrowsePathBreadcrumbs,
+} from "@t3tools/shared/path";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -71,7 +75,7 @@ import {
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { msg, useGT, useMessages } from "gt-react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Platform, Pressable, ScrollView as RNScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
@@ -1047,8 +1051,21 @@ function FolderBrowser(props: {
   readonly pinnedDirectoryName?: string;
   readonly cloning?: boolean;
 }) {
+  const projects = useProjects();
   const messages = useMessages();
   const browsePath = getFilesystemBrowsePath(props.pathInput, props.environment.platform);
+  const envIsWindows = isWindowsPlatform(props.environment.platform);
+  const quickPaths = deriveQuickBrowsePaths({
+    projectWorkspaceRoots: projects
+      .filter(
+        (project) =>
+          project.environmentId === props.environment.environmentId && project.archivedAt === null,
+      )
+      .map((project) => project.workspaceRoot),
+    baseDirectory: props.environment.baseDirectory,
+    isWindows: envIsWindows,
+  });
+  const breadcrumbs = splitBrowsePathBreadcrumbs(browsePath.directoryPath, envIsWindows);
   const browseInput =
     browsePath.directoryPath.length > 0 ? { partialPath: browsePath.directoryPath } : null;
   const fileAccessSession = useEnvironmentQuery(
@@ -1086,6 +1103,63 @@ function FolderBrowser(props: {
 
   return (
     <>
+      {quickPaths.length > 0 ? (
+        <View className="gap-1.5">
+          <SectionTitle>{gt("Quick paths")}</SectionTitle>
+          <RNScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+          >
+            {quickPaths.map((option) => (
+              <Pressable
+                key={option.path}
+                accessibilityRole="button"
+                onPress={() => {
+                  void props.navigateToBrowsePath({ browseDirectoryPath: option.path });
+                }}
+                className="flex-row items-center gap-1.5 rounded-full border border-border-subtle bg-grouped-card px-3 py-1.5 active:opacity-70"
+              >
+                <SymbolView
+                  name="folder"
+                  size={13}
+                  tintColorClassName="accent-icon-muted"
+                  type="monochrome"
+                />
+                <Text numberOfLines={1} className="max-w-[200px] text-xs font-t3-medium text-foreground">
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </RNScrollView>
+        </View>
+      ) : null}
+      {breadcrumbs.length > 1 ? (
+        <RNScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ alignItems: "center", gap: 4, paddingVertical: 2 }}
+        >
+          {breadcrumbs.map((crumb, index) => (
+            <View key={crumb.path} className="flex-row items-center gap-1">
+              {index > 0 ? (
+                <Text className="text-xs text-foreground-muted">/</Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  void props.navigateToBrowsePath({ browseDirectoryPath: crumb.path });
+                }}
+                className="rounded-md bg-grouped-card px-2 py-1 active:opacity-70"
+              >
+                <Text numberOfLines={1} className="max-w-[140px] text-xs font-t3-medium text-foreground">
+                  {crumb.label}
+                </Text>
+              </Pressable>
+            </View>
+          ))}
+        </RNScrollView>
+      ) : null}
       <SectionTitle>{gt("Browse folders")}</SectionTitle>
       {!canReadFiles && !fileAccess.isPending ? (
         <ErrorBanner

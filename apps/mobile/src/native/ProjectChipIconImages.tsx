@@ -136,8 +136,22 @@ function GlyphCapture(props: { readonly tile: PendingTile }) {
 function MonogramTile(props: { readonly text: string; readonly color: ProjectIconColor }) {
   const classNames = projectIconColorClassNames(props.color);
   const background = useResolveClassNames(classNames.background);
-  const foreground = useResolveClassNames(`font-mono ${classNames.text}`);
-  const fontSize = TILE_SIZE * (countGlyphs(props.text) === 1 ? 0.6 : 0.515625);
+  const hasCjk = /[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Hangul}]/u.test(props.text);
+  const foreground = useResolveClassNames(hasCjk ? classNames.text : `font-mono ${classNames.text}`);
+  const glyphs = Math.max(1, countGlyphs(props.text));
+  const fontSize =
+    TILE_SIZE *
+    (hasCjk
+      ? glyphs <= 1
+        ? 0.6
+        : glyphs === 2
+          ? 0.42
+          : 0.3
+      : glyphs <= 1
+        ? 0.6
+        : glyphs === 2
+          ? 0.5
+          : 0.36);
   return (
     <>
       <Rect
@@ -152,7 +166,7 @@ function MonogramTile(props: { readonly text: string; readonly color: ProjectIco
         textAnchor="middle"
         fill={String(foreground.color)}
         fontFamily={typeof foreground.fontFamily === "string" ? foreground.fontFamily : undefined}
-        fontWeight="700"
+        fontWeight={hasCjk ? "600" : "700"}
         fontSize={fontSize}
       >
         {props.text}

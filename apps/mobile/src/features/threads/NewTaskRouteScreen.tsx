@@ -20,8 +20,9 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { resolveEnvironmentMachineKind, type EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Platform, Pressable, ScrollView as RNScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
 import { runtimeConnectionErrorText } from "../connection/environmentStatusText";
@@ -29,6 +30,7 @@ import { ScreenContent } from "../../components/ui/ScreenContent";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
+import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
@@ -209,7 +211,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
       ),
   );
-  const visibleScopes = filterProjectScopes(listScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
     ? (projects.find(
@@ -224,6 +225,38 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       .filter((environment) => environment.connectionState === "connected")
       .map((environment) => environment.environmentId),
   );
+  const environmentLabelById = new Map(
+    connectedEnvironments.map((environment) => [environment.environmentId, environment.label] as const),
+  );
+  const [machineFilterId, setMachineFilterId] = useState<EnvironmentId | null>(
+    () => selectedEnvironmentId ?? null,
+  );
+  const machineOptions = connectedEnvironments
+    .map((environment) => {
+      const count = listScopes.filter((scope) =>
+        scope.projects.some((project) => project.environmentId === environment.environmentId),
+      ).length;
+      return {
+        environmentId: environment.environmentId,
+        label: environment.label,
+        machine: resolveEnvironmentMachineKind(serverConfigs.get(environment.environmentId) ?? null),
+        count,
+      };
+    })
+    .filter((option) => option.count > 0);
+  const hasMultipleMachines = machineOptions.length > 1;
+  const effectiveMachineFilterId =
+    machineFilterId !== null &&
+    machineOptions.some((option) => option.environmentId === machineFilterId)
+      ? machineFilterId
+      : null;
+  const machineFilteredScopes =
+    effectiveMachineFilterId === null
+      ? listScopes
+      : listScopes.filter((scope) =>
+          scope.projects.some((project) => project.environmentId === effectiveMachineFilterId),
+        );
+  const filteredVisibleScopes = filterProjectScopes(machineFilteredScopes, searchText);
   const openScratch = useAtomCommand(projectEnvironment.openScratch, {
     reportFailure: false,
   });
@@ -385,11 +418,81 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             paddingBottom: Math.max(insets.bottom, 18) + 18,
             paddingHorizontal: Platform.OS === "android" ? 16 : 20,
             paddingTop: Platform.OS === "android" ? 16 : 8,
-            ...(Platform.OS === "android" && visibleScopes.length === 0
+            ...(Platform.OS === "android" && filteredVisibleScopes.length === 0
               ? { flexGrow: 1, justifyContent: "center" as const }
               : {}),
           }}
         >
+          {hasMultipleMachines ? (
+            <RNScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+            >
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: effectiveMachineFilterId === null }}
+                onPress={() => setMachineFilterId(null)}
+                className={cn(
+                  "flex-row items-center gap-1.5 rounded-full border px-3 py-1.5",
+                  effectiveMachineFilterId === null
+                    ? "border-primary bg-primary"
+                    : "border-border-subtle bg-grouped-card",
+                )}
+              >
+                <Text
+                  className={cn(
+                    "text-xs font-t3-semibold",
+                    effectiveMachineFilterId === null
+                      ? "text-primary-foreground"
+                      : "text-foreground-muted",
+                  )}
+                >
+                  <T>All machines</T>
+                </Text>
+              </Pressable>
+              {machineOptions.map((option) => {
+                const selected = effectiveMachineFilterId === option.environmentId;
+                return (
+                  <Pressable
+                    key={option.environmentId}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected }}
+                    onPress={() => setMachineFilterId(option.environmentId)}
+                    className={cn(
+                      "flex-row items-center gap-1.5 rounded-full border px-3 py-1.5",
+                      selected
+                        ? "border-primary bg-primary"
+                        : "border-border-subtle bg-grouped-card",
+                    )}
+                  >
+                    <EnvironmentMachineSymbol
+                      kind={option.machine}
+                      size={13}
+                      tintColorClassName={selected ? "accent-primary-foreground" : "accent-icon-muted"}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      className={cn(
+                        "max-w-[140px] text-xs font-t3-semibold",
+                        selected ? "text-primary-foreground" : "text-foreground",
+                      )}
+                    >
+                      {option.label}
+                    </Text>
+                    <Text
+                      className={cn(
+                        "text-2xs tabular-nums",
+                        selected ? "text-primary-foreground/80" : "text-foreground-muted",
+                      )}
+                    >
+                      {option.count}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </RNScrollView>
+          ) : null}
           {scratchOption !== null && listScopes.length > 0 ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
@@ -520,7 +623,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 </>
               )}
             </View>
-          ) : visibleScopes.length === 0 ? (
+          ) : filteredVisibleScopes.length === 0 ? (
             <View className="items-center gap-2 px-6 py-8">
               <Text className="text-center text-lg font-t3-bold text-foreground">
                 <T>No matching projects</T>
@@ -538,38 +641,41 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   : "overflow-hidden rounded-[24px] bg-grouped-card"
               }
             >
-              {visibleScopes.map((scope, scopeIndex) => {
-                const hasMultipleProjects = scope.projects.length > 1;
+              {filteredVisibleScopes.map((scope, scopeIndex) => {
+                const hasMultipleProjects =
+                  effectiveMachineFilterId === null && scope.projects.length > 1;
                 const selectionTarget = getProjectScopeSelectionTarget(
                   scope,
-                  selectedEnvironmentId,
+                  effectiveMachineFilterId ?? selectedEnvironmentId,
                   connectedEnvironmentIds,
                 );
+                const envLabel = environmentLabelById.get(selectionTarget.environmentId) ?? null;
+                const rowSubtitle = hasMultipleProjects
+                  ? gt("{count, plural, other {{count} workspaces}}", {
+                      count: scope.projects.length,
+                    })
+                  : hasMultipleMachines && envLabel
+                    ? `${envLabel} · ${selectionTarget.workspaceRoot}`
+                    : selectionTarget.workspaceRoot;
                 if (Platform.OS === "android") {
                   return (
                     <NavigationRow
                       className="bg-grouped-card"
                       key={scope.key}
                       title={scope.title}
-                      subtitle={
-                        hasMultipleProjects
-                          ? gt("{count, plural, other {{count} workspaces}}", {
-                              count: scope.projects.length,
-                            })
-                          : selectionTarget.workspaceRoot
-                      }
+                      subtitle={rowSubtitle}
                       subtitleNumberOfLines={1}
                       subtitleEllipsizeMode="middle"
                       disabled={reservedDestinationProject !== null}
                       onPress={() => chooseProject(selectionTarget)}
                       leading={
                         <ProjectFavicon
-                          environmentId={scope.representative.environmentId}
-                          faviconPath={scope.representative.faviconPath}
-                          projectIcon={scope.representative.projectIcon}
+                          environmentId={selectionTarget.environmentId}
+                          faviconPath={selectionTarget.faviconPath}
+                          projectIcon={selectionTarget.projectIcon}
                           size={24}
-                          projectTitle={scope.representative.title}
-                          workspaceRoot={scope.representative.workspaceRoot}
+                          projectTitle={selectionTarget.title}
+                          workspaceRoot={selectionTarget.workspaceRoot}
                         />
                       }
                     />
@@ -589,12 +695,12 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     >
                       <View className="h-7 w-7 items-center justify-center">
                         <ProjectFavicon
-                          environmentId={scope.representative.environmentId}
-                          faviconPath={scope.representative.faviconPath}
-                          projectIcon={scope.representative.projectIcon}
+                          environmentId={selectionTarget.environmentId}
+                          faviconPath={selectionTarget.faviconPath}
+                          projectIcon={selectionTarget.projectIcon}
                           size={20}
-                          projectTitle={scope.representative.title}
-                          workspaceRoot={scope.representative.workspaceRoot}
+                          projectTitle={selectionTarget.title}
+                          workspaceRoot={selectionTarget.workspaceRoot}
                         />
                       </View>
                       <View className="min-w-0 flex-1">
@@ -606,11 +712,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           ellipsizeMode="middle"
                           numberOfLines={1}
                         >
-                          {hasMultipleProjects
-                            ? gt("{count, plural, other {{count} workspaces}}", {
-                                count: scope.projects.length,
-                              })
-                            : selectionTarget.workspaceRoot}
+                          {rowSubtitle}
                         </Text>
                       </View>
                       <SymbolView

@@ -88,10 +88,8 @@ import { useThreadRowProviderInstanceResolver } from "../threads/thread-provider
 import { useOpenThreadPullRequests } from "../threads/use-open-thread-pull-requests";
 import type { ThreadPrPresentation } from "../../state/thread-pr-presentation";
 import {
-  threadListV2ListItemsAreEqual,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
-  type ThreadListV2ListItem,
 } from "../threads/threadListV2";
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
@@ -465,7 +463,7 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     onSelectThread(thread);
   };
-  const [groupByProject, setGroupByProject] = useState(true);
+  const [groupByProject, setGroupByProject] = useState(false);
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -519,7 +517,10 @@ export function HomeScreen(props: HomeScreenProps) {
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ expanded: !item.collapsed }}
-              accessibilityLabel={`${item.title}, ${item.count} 个会话`}
+              accessibilityLabel={gt("{title}, {count} threads", {
+                title: item.title,
+                count: item.count,
+              })}
               onPress={() => toggleProjectGroup(item.scopeKey)}
               className="min-w-0 flex-1 flex-row items-center gap-2.5 px-3 py-2.5 active:opacity-75"
             >
@@ -815,7 +816,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListHeader = (
     <>
       {listHeader}
-      {Platform.OS === "ios" && workspace ? (
+      {(Platform.OS === "android" || workspace) ? (
         <ThreadListFilters
           gutter={sidebarSurface ? 8 : 0}
           environments={props.environments}
@@ -837,28 +838,8 @@ export function HomeScreen(props: HomeScreenProps) {
         />
       ) : null}
       {!hasSearchQuery && v2ScopedProjectGroup === null ? (
-        <View className="flex-row items-center justify-between px-4 pt-1 pb-1">
+        <View className="flex-row items-center justify-between px-4 pt-0.5 pb-1">
           <View className="flex-row items-center rounded-full bg-grouped-card p-0.5 border border-border-subtle">
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: groupByProject }}
-              onPress={() => setGroupByProject(true)}
-              className={
-                groupByProject
-                  ? "rounded-full bg-primary px-2.5 py-1"
-                  : "rounded-full px-2.5 py-1 active:opacity-70"
-              }
-            >
-              <Text
-                className={
-                  groupByProject
-                    ? "text-xs font-t3-semibold text-primary-foreground"
-                    : "text-xs font-t3-medium text-foreground-muted"
-                }
-              >
-                按项目
-              </Text>
-            </Pressable>
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected: !groupByProject }}
@@ -876,7 +857,27 @@ export function HomeScreen(props: HomeScreenProps) {
                     : "text-xs font-t3-medium text-foreground-muted"
                 }
               >
-                按时间
+                {gt("By time")}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected: groupByProject }}
+              onPress={() => setGroupByProject(true)}
+              className={
+                groupByProject
+                  ? "rounded-full bg-primary px-2.5 py-1"
+                  : "rounded-full px-2.5 py-1 active:opacity-70"
+              }
+            >
+              <Text
+                className={
+                  groupByProject
+                    ? "text-xs font-t3-semibold text-primary-foreground"
+                    : "text-xs font-t3-medium text-foreground-muted"
+                }
+              >
+                {gt("By project")}
               </Text>
             </Pressable>
           </View>
@@ -887,7 +888,9 @@ export function HomeScreen(props: HomeScreenProps) {
               className="rounded-full px-2 py-1 active:opacity-70"
             >
               <Text className="text-xs font-t3-medium text-foreground-muted">
-                {allProjectsCollapsed ? `展开全部 (${projectGroupKeys.length})` : `折叠全部 (${projectGroupKeys.length})`}
+                {allProjectsCollapsed
+                  ? gt("Expand all ({count})", { count: projectGroupKeys.length })
+                  : gt("Collapse all ({count})", { count: projectGroupKeys.length })}
               </Text>
             </Pressable>
           ) : null}

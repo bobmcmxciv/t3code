@@ -1037,20 +1037,34 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     }
   };
 
+  const isCardVariant = variant === "card";
   const rowSurfaceClassName = cn(
-    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left outline-none select-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    isCardVariant ? "rounded-xl" : "rounded-md",
     variantAction === "unsettle" &&
       !props.isActive &&
       "[&:not(:hover):not(:focus-within)_*:not(.live-activity-focus_*)]:text-secondary-label",
     props.isActive
-      ? "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+      ? isCardVariant
+        ? "border border-sidebar-border/85 bg-sidebar-row-active text-sidebar-foreground shadow-xs"
+        : "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
       : isSelected || props.sweepAction !== null
-        ? "bg-sidebar-row-selected text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+        ? isCardVariant
+          ? "border border-sidebar-border/75 bg-sidebar-row-selected text-sidebar-foreground"
+          : "bg-sidebar-row-selected text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
         : hasUnsentDraft
-          ? cn(draftSurfaceClassName, "text-sidebar-foreground")
+          ? cn(
+              draftSurfaceClassName,
+              "text-sidebar-foreground",
+              isCardVariant && "border border-warning/25",
+            )
           : shouldRecede
-            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-            : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+            ? isCardVariant
+              ? "border border-sidebar-border/35 bg-sidebar-control-surface/35 text-sidebar-muted-foreground/75 hover:border-sidebar-border/65 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+              : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+            : isCardVariant
+              ? "border border-sidebar-border/50 bg-sidebar-control-surface/50 text-sidebar-foreground hover:border-sidebar-border/80 hover:bg-sidebar-row-hover"
+              : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
     shouldRecede &&
       (status === "preparing" || status === "working") &&
       "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
@@ -1539,11 +1553,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       data-thread-item={threadKey}
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
-      // The hints are the rendered heights inside py-0.5. Revealing the open thread measures rows
+      // The hints are the rendered heights inside py-1. Revealing the open thread measures rows
       // that have not rendered yet, so a hint off by a pixel lands it a pixel short per row above.
       className={cn(
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        metaLineEmpty && "[contain-intrinsic-size:auto_60px]",
+        "list-none py-1 [content-visibility:auto] [contain-intrinsic-size:auto_84px]",
+        metaLineEmpty && "[contain-intrinsic-size:auto_66px]",
         sortable?.isDragging && "relative z-20",
       )}
     >

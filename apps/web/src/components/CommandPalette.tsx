@@ -3,6 +3,10 @@ import { decodeMsg, msg, T, useGT, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import {
+  deriveQuickBrowsePaths,
+  splitBrowsePathBreadcrumbs,
+} from "@t3tools/shared/path";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import {
@@ -2426,6 +2430,41 @@ function OpenCommandPaletteDialog(props: {
     );
   };
 
+  const browseJumpTo = async (targetDirectoryPath: string): Promise<void> => {
+    const nextQuery = getCloneDestinationPath(targetDirectoryPath, pinnedCloneDirectoryName);
+    await browseNavigation.run(
+      () => prefetchBrowsePath(getBrowseDirectoryPath(nextQuery)),
+      () => {
+        setHighlightedItemValue(null);
+        setQuery(nextQuery);
+        setBrowseGeneration((generation) => generation + 1);
+      },
+    );
+  };
+
+  const quickBrowseIsWindows = isWindowsPlatform(browseEnvironmentPlatform);
+  const quickBrowsePaths =
+    isBrowsing && browseEnvironmentId !== null
+      ? deriveQuickBrowsePaths({
+          projectWorkspaceRoots: projects
+            .filter(
+              (project) =>
+                project.environmentId === browseEnvironmentId &&
+                project.archivedAt === null &&
+                !isScratchProject(project, scratchWorkspaceRootFor(project.environmentId)),
+            )
+            .map((project) => project.workspaceRoot),
+          baseDirectory: browseEnvironment?.serverConfig?.settings.addProjectBaseDirectory ?? null,
+          isWindows: quickBrowseIsWindows,
+        })
+      : [];
+  const browseBreadcrumbs = isBrowsing
+    ? splitBrowsePathBreadcrumbs(
+        browseResult?.parentPath ?? browsePath.directoryPath,
+        quickBrowseIsWindows,
+      )
+    : [];
+
   const resolvedAddProjectPath = hasTrailingPathSeparator(query)
     ? (browseResult?.parentPath ?? query.trim())
     : (exactBrowseEntry?.fullPath ?? query.trim());
@@ -3174,6 +3213,70 @@ function OpenCommandPaletteDialog(props: {
           }
           description={addProjectCloneFlow.repository?.url ?? addProjectCloneFlow.remoteUrl}
         />
+      ) : null}
+      {isBrowsing && (quickBrowsePaths.length > 0 || browseBreadcrumbs.length > 0) ? (
+        <div
+          data-testid="command-palette-quick-paths"
+          className="flex flex-col gap-1.5 border-b border-border/60 bg-muted/25 px-3 py-2"
+        >
+          {browseBreadcrumbs.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1 text-xs">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
+                {browseBreadcrumbs.map((crumb, index) => (
+                  <span key={crumb.path} className="inline-flex items-center gap-0.5">
+                    {index > 0 ? (
+                      <ChevronRightIcon
+                        aria-hidden
+                        className="size-3 shrink-0 text-muted-foreground/60"
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void browseJumpTo(crumb.path)}
+                      className="max-w-40 cursor-pointer truncate rounded px-1.5 py-0.5 font-mono text-2xs text-foreground/85 transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      {crumb.label}
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {canCreateProject && !relativePathNeedsActiveProject ? (
+                <button
+                  type="button"
+                  disabled={isCloneDestinationStep && (!canCloneProject || isRemoteProjectPending)}
+                  onClick={() => {
+                    if (isCloneDestinationStep) {
+                      void submitAddProjectCloneFlow(resolvedAddProjectPath);
+                    } else {
+                      void handleAddProject(resolvedAddProjectPath);
+                    }
+                  }}
+                  className="shrink-0 cursor-pointer rounded-md bg-foreground px-2 py-0.5 text-2xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-45"
+                >
+                  {isCloneDestinationStep ? gt("Clone here") : gt("Select this folder")}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {quickBrowsePaths.length > 0 ? (
+            <div className="flex items-center gap-1 overflow-x-auto">
+              <span className="shrink-0 text-2xs text-muted-foreground">
+                <T>Quick paths:</T>
+              </span>
+              {quickBrowsePaths.map((option) => (
+                <button
+                  key={option.path}
+                  type="button"
+                  onClick={() => void browseJumpTo(option.path)}
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 font-mono text-2xs text-foreground/85 transition-colors hover:border-border hover:bg-accent hover:text-foreground"
+                >
+                  <FolderIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="max-w-44 truncate">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
       {browseAccessError ? (
         <div role="alert" className="px-4 py-3 text-sm text-muted-foreground">

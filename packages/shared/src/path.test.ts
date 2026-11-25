@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  deriveQuickBrowsePaths,
   isWslSharePath,
   workspaceRelativeFilePath,
   newProjectFolderName,
@@ -7,6 +8,7 @@ import {
   normalizeProjectPathForDispatch,
   resolvePastedPath,
   resolveWorkspaceFilePath,
+  splitBrowsePathBreadcrumbs,
 } from "./path.ts";
 
 describe("path helpers", () => {
@@ -142,5 +144,51 @@ describe("workspaceRelativeFilePath", () => {
     ["\\\\server\\share\\repo\\..\\notes.md", "\\\\server\\share\\repo", null],
   ])("relates %s to %s", (path, workspaceRoot, relativePath) => {
     expect(workspaceRelativeFilePath(path, workspaceRoot)).toBe(relativePath);
+  });
+});
+
+describe("quick browse paths & breadcrumbs", () => {
+  it("ranks most-used Windows project parent directories first and deduplicates drives", () => {
+    const quick = deriveQuickBrowsePaths({
+      projectWorkspaceRoots: [
+        "C:\\vircs-projects\\t3-code",
+        "C:\\vircs-projects\\llm-bench",
+        "D:\\work\\demo",
+      ],
+      baseDirectory: "c:/vircs-projects/",
+      isWindows: true,
+    });
+    expect(quick.map((item) => item.path)).toEqual([
+      "C:\\vircs-projects\\",
+      "D:\\work\\",
+      "~\\",
+      "C:\\",
+      "D:\\",
+    ]);
+  });
+
+  it("derives POSIX quick paths and breadcrumbs cleanly", () => {
+    const quick = deriveQuickBrowsePaths({
+      projectWorkspaceRoots: ["/Users/bobpang/projects/app1", "/Users/bobpang/projects/app2"],
+      baseDirectory: "/Users/bobpang",
+      isWindows: false,
+    });
+    expect(quick.map((item) => item.path)).toEqual([
+      "/Users/bobpang/projects/",
+      "/Users/bobpang/",
+      "~/",
+      "/",
+    ]);
+    expect(splitBrowsePathBreadcrumbs("/Users/bobpang/projects/", false)).toEqual([
+      { label: "/", path: "/" },
+      { label: "Users", path: "/Users/" },
+      { label: "bobpang", path: "/Users/bobpang/" },
+      { label: "projects", path: "/Users/bobpang/projects/" },
+    ]);
+    expect(splitBrowsePathBreadcrumbs("C:\\vircs-projects\\t3-code\\", true)).toEqual([
+      { label: "C:\\", path: "C:\\" },
+      { label: "vircs-projects", path: "C:\\vircs-projects\\" },
+      { label: "t3-code", path: "C:\\vircs-projects\\t3-code\\" },
+    ]);
   });
 });

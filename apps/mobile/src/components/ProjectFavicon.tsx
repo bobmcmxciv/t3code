@@ -112,13 +112,33 @@ function ProjectIconGlyphView(props: { readonly glyph: ProjectIconGlyph; readonl
   }
 
   const colors = projectIconColorClassNames(glyph.color);
+  const glyphCount = Math.max(1, countGlyphs(glyph.text));
+  const hasCjk = /[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Hangul}]/u.test(glyph.text);
+  const widthRatio = hasCjk
+    ? glyphCount <= 1
+      ? 1
+      : glyphCount === 2
+        ? 1.55
+        : glyphCount === 3
+          ? 2.15
+          : 2.75
+    : glyphCount <= 2
+      ? 1.1
+      : glyphCount === 3
+        ? 1.5
+        : 1.9;
+  const badgeWidth = Math.round(size * widthRatio);
+  const fontSize = Math.round(
+    size * (hasCjk ? (glyphCount <= 1 ? 0.6 : 0.54) : glyphCount <= 2 ? 0.54 : 0.48),
+  );
   return (
     <View
       className={colors.background}
       style={{
-        width: size,
+        minWidth: badgeWidth,
         height: size,
-        borderRadius: size * 0.25,
+        paddingHorizontal: widthRatio > 1.1 ? Math.max(3, Math.round(size * 0.16)) : 0,
+        borderRadius: Math.max(4, Math.round(size * 0.25)),
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -126,10 +146,10 @@ function ProjectIconGlyphView(props: { readonly glyph: ProjectIconGlyph; readonl
       <AppText
         allowFontScaling={false}
         numberOfLines={1}
-        className={`font-mono ${colors.text}`}
+        className={`${hasCjk ? "" : "font-mono "}${colors.text}`}
         style={{
-          fontWeight: "700",
-          fontSize: size * (countGlyphs(glyph.text) === 1 ? 0.6 : 0.515625),
+          fontWeight: hasCjk ? "600" : "700",
+          fontSize,
           lineHeight: size,
           textAlign: "center",
           includeFontPadding: false,
@@ -180,7 +200,7 @@ function ProjectFaviconImage(props: {
   return (
     <View
       style={{
-        width: props.size,
+        minWidth: props.size,
         height: props.size,
         alignItems: "center",
         justifyContent: "center",

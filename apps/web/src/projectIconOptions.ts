@@ -72,11 +72,12 @@ export function filterProjectIconNames(query: string): ReadonlyArray<string> {
   return lucideIconNames.filter((name) => name.includes(normalized)).slice(0, 60);
 }
 
-// The server also rejects monograms longer than two graphemes (ProjectCommands.ts).
+// Allow up to 4 graphemes (supports 2-4 Chinese characters or 2-4 letter acronyms).
 export function isValidProjectMonogram(text: string): boolean {
   if (!isProjectMonogramText(text)) return false;
   const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text);
-  return Array.from(segments).length <= 2;
+  const len = Array.from(segments).length;
+  return len >= 1 && len <= 4;
 }
 
 export function firstEmoji(value: string): string | null {

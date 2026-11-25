@@ -1,4 +1,5 @@
 import type { ProjectIconColor } from "@t3tools/contracts";
+import { isCjkMonogram } from "@t3tools/shared/projectMonogram";
 import { projectIconColorClassName } from "../projectIconColors";
 import { cn } from "~/lib/utils";
 
@@ -13,33 +14,57 @@ export function ProjectMonogram({
   readonly color: ProjectIconColor;
   readonly className?: string | undefined;
 }) {
-  // Wrap the tile to avoid menu/button SVG margin trimming.
+  const glyphCount = Math.max(1, Array.from(monogramSegmenter.segment(text)).length);
+  const hasCjk = isCjkMonogram(text);
+  // Adaptive viewBox width so 2-4 Chinese chars or 3-char acronyms never get squished.
+  const viewWidth = hasCjk
+    ? glyphCount <= 1
+      ? 16
+      : glyphCount === 2
+        ? 24
+        : glyphCount === 3
+          ? 34
+          : 44
+    : glyphCount <= 2
+      ? 18
+      : glyphCount === 3
+        ? 24
+        : 30;
+  const fontSize = hasCjk ? (glyphCount <= 1 ? 10.2 : 9.4) : glyphCount <= 2 ? 9.2 : 8.5;
+  const baselineY = hasCjk ? 11.4 : 11.1;
+  const isWide = viewWidth > 18;
+
   return (
     <span
       aria-hidden="true"
       data-slot="project-monogram"
-      className={cn("inline-flex size-4 shrink-0 items-center justify-center", className)}
+      className={cn(
+        "inline-flex h-4 shrink-0 items-center justify-center",
+        isWide ? "w-auto" : "size-4",
+        className,
+        isWide && "w-auto",
+      )}
     >
       <svg
-        viewBox="0 0 16 16"
+        viewBox={`0 0 ${viewWidth} 16`}
         className={cn(
-          "size-full overflow-hidden rounded-[25%] font-mono select-none",
+          "h-full w-auto overflow-hidden rounded-sm select-none",
+          hasCjk ? "font-sans" : "font-mono",
           projectIconColorClassName(color),
         )}
         style={{
-          backgroundColor: "color-mix(in srgb, currentColor 14%, transparent)",
+          backgroundColor: "color-mix(in srgb, currentColor 16%, transparent)",
+          boxShadow: "inset 0 0 0 1px color-mix(in srgb, currentColor 24%, transparent)",
         }}
       >
         <text
-          x="8"
-          y="10.8"
+          x={viewWidth / 2}
+          y={baselineY}
           textAnchor="middle"
           fill="currentColor"
-          className="font-mono"
-          fontSize="8.25"
-          fontWeight="700"
-          textLength={Array.from(monogramSegmenter.segment(text)).length === 1 ? 6 : 12}
-          lengthAdjust="spacingAndGlyphs"
+          className={hasCjk ? "font-sans" : "font-mono"}
+          fontSize={fontSize}
+          fontWeight={hasCjk ? "600" : "700"}
           textRendering="geometricPrecision"
         >
           {text}

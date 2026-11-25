@@ -237,7 +237,7 @@ function ProjectIconPickerBody({
                 autoComplete="off"
               />
               <p id="project-monogram-hint" className="text-xs text-muted-foreground">
-                <T>One or two letters or numbers.</T>
+                <T>Up to 4 letters, numbers, or CJK characters.</T>
               </p>
             </div>
           </div>
