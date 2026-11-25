@@ -616,6 +616,52 @@ export function filterSidebarV2VisibleThreads<
   );
 }
 
+/**
+ * The `environmentId:projectId` keys the sidebar lists under its project and environment
+ * scopes; null lists everything. An environment with no project yet lists nothing.
+ */
+export function combineSidebarScopes(input: {
+  readonly projectScopeKeys: ReadonlySet<string> | null;
+  readonly environmentId: string | null;
+  readonly groups: ReadonlyArray<Pick<LogicalSidebarProject, "memberProjectRefs">>;
+}): ReadonlySet<string> | null {
+  if (input.environmentId === null) return input.projectScopeKeys;
+  const keys = new Set<string>();
+  for (const group of input.groups) {
+    for (const ref of group.memberProjectRefs) {
+      if (ref.environmentId !== input.environmentId) continue;
+      const key = `${ref.environmentId}:${ref.projectId}`;
+      if (input.projectScopeKeys === null || input.projectScopeKeys.has(key)) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/** Project groups with a project on `environmentId`, or every group when it is null. */
+export function projectGroupsInEnvironment<
+  T extends Pick<LogicalSidebarProject, "memberProjectRefs">,
+>(groups: readonly T[], environmentId: string | null): T[] {
+  if (environmentId === null) return [...groups];
+  return groups.filter((group) =>
+    group.memberProjectRefs.some((ref) => ref.environmentId === environmentId),
+  );
+}
+
+/**
+ * The stored environment scope while that environment is still saved. Until the catalog loads
+ * the stored scope stands, so a reload does not flash every environment's threads.
+ */
+export function resolveSidebarEnvironmentScope(input: {
+  readonly storedEnvironmentId: string | null;
+  readonly knownEnvironmentIds: ReadonlySet<string>;
+  readonly catalogReady: boolean;
+}): string | null {
+  const stored = input.storedEnvironmentId;
+  if (stored === null) return null;
+  if (!input.catalogReady) return stored;
+  return input.knownEnvironmentIds.has(stored) ? stored : null;
+}
+
 export function buildBulkTitleRegenerationContextMenuItem(input: {
   supportedCount: number;
   actionableCount: number;

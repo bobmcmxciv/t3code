@@ -53,6 +53,8 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   collapsed: boolean;
   hiddenThreads: readonly EnvironmentThreadShell[];
   totalThreadCount?: number;
+  /** Name the folder's machines when the list spans several environments. */
+  showEnvironment?: boolean;
   onToggle: (group: SidebarProjectSnapshot) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
   onContextMenu: (
@@ -67,6 +69,15 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   const threadCount = props.totalThreadCount ?? hiddenThreads.length;
   const accentColor = projectAccentColor(group.projectKey);
   const rowId = sidebarFolderRowId(group.projectKey);
+  const environmentLabels = props.showEnvironment
+    ? [
+        ...new Set(
+          group.memberProjects.flatMap((member) =>
+            member.environmentLabel ? [member.environmentLabel] : [],
+          ),
+        ),
+      ].join(", ")
+    : "";
   const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   const dot = collapsed
     ? resolveSidebarFolderDot(
@@ -100,11 +111,16 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           );
         }}
         style={{ borderLeftColor: accentColor }}
-        className="flex h-8.5 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) border border-sidebar-border/60 border-l-[3px] bg-sidebar-accent/45 px-2.5 text-left outline-none transition-colors hover:bg-sidebar-accent/75 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex h-8.5 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) border border-sidebar-border/60 border-l-3 bg-sidebar-control-surface px-2.5 text-left outline-none transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <ProjectFavicon project={group} className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight text-sidebar-foreground">
+        {/* The name keeps its width; the machine label only takes what is left, and also pushes
+            the count and chevron to the end. */}
+        <span className="min-w-0 truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
           {group.displayName}
+        </span>
+        <span className="min-w-0 flex-1 basis-0 truncate text-2xs font-normal text-sidebar-muted-foreground">
+          {environmentLabels}
         </span>
         {dot ? (
           <span className={cn("size-1.5 shrink-0 rounded-full", FOLDER_DOT_CLASS_NAME[dot])}>
@@ -112,7 +128,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           </span>
         ) : null}
         {threadCount > 0 ? (
-          <span className="shrink-0 rounded-full bg-sidebar-background/75 px-1.5 py-0.5 text-[11px] leading-none font-medium tabular-nums text-sidebar-foreground/75 group-hover/project-folder:invisible group-has-[[data-sidebar-action-for]:focus]/project-folder:invisible pointer-coarse:invisible">
+          <span className="shrink-0 rounded-full bg-sidebar/75 px-1.5 py-0.5 text-2xs leading-none font-medium tabular-nums text-sidebar-foreground/75 group-hover/project-folder:invisible group-has-[[data-sidebar-action-for]:focus]/project-folder:invisible pointer-coarse:invisible">
             {threadCount}
           </span>
         ) : null}

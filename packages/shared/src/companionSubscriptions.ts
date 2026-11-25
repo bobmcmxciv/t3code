@@ -137,7 +137,8 @@ export function resolveCompanionPortalUrl(
   return baseOrigin ? `${baseOrigin}/_portal/` : null;
 }
 
-function resolveCompanionOrigin(
+/** The Companion gateway origin this client talks to, or `null` when none is configured. */
+export function resolveCompanionOrigin(
   currentOrigin?: string | null,
   configuredOrigin?: string | null,
 ): string | null {

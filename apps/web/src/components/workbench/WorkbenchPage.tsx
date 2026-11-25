@@ -1,8 +1,10 @@
 import { resolveCompanionPortalUrl } from "@t3tools/shared/companionSubscriptions";
+import { useNavigate } from "@tanstack/react-router";
 import { T, useGT } from "gt-react";
 import { ExternalLinkIcon, LayoutGridIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { parseCompanionNavigateMessage } from "../../companionMachines";
 import { ensureLocalApi } from "../../localApi";
 import { AppRouteModal, AppRouteModalClose } from "../AppRouteModal";
 import { Button } from "../ui/button";
@@ -17,6 +19,21 @@ export function WorkbenchPage() {
     typeof window !== "undefined" ? window.location.origin : null,
     (import.meta.env.VITE_COMPANION_ORIGIN as string | undefined) ?? null,
   );
+  const portalOrigin = portalUrl ? new URL(portalUrl).origin : null;
+  const navigate = useNavigate();
+
+  // The Workbench links to threads; the frame cannot leave itself, so it asks this page to go.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to postMessage from the embedded Companion page
+  useEffect(() => {
+    if (portalOrigin === null) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== portalOrigin) return;
+      const path = parseCompanionNavigateMessage(event.data);
+      if (path !== null) void navigate({ href: path });
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [navigate, portalOrigin]);
 
   const handleReload = () => {
     setLoaded(false);

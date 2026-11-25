@@ -8,6 +8,9 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
   ADD_PROJECT_SCOPE_ITEM_VALUE,
+  combineSidebarScopes,
+  projectGroupsInEnvironment,
+  resolveSidebarEnvironmentScope,
   filterSidebarProjectScopeItems,
   shouldCreateNewThreadInCurrentProject,
   resolveScopedNewThreadProjectRef,
@@ -1854,5 +1857,77 @@ describe("filterSidebarProjectScopeItems", () => {
 
     expect(filter("")).toEqual([ADD_PROJECT_SCOPE_ITEM_VALUE, "all", "p1"]);
     expect(filter("project")).toEqual(["p1"]);
+  });
+});
+
+describe("sidebar environment scope", () => {
+  const studio = "env-studio";
+  const laptop = "env-laptop";
+  const groups = [
+    {
+      projectKey: "api",
+      memberProjectRefs: [
+        { environmentId: studio, projectId: "api" },
+        { environmentId: laptop, projectId: "api-laptop" },
+      ],
+    },
+    { projectKey: "web", memberProjectRefs: [{ environmentId: studio, projectId: "web" }] },
+    { projectKey: "notes", memberProjectRefs: [{ environmentId: laptop, projectId: "notes" }] },
+  ];
+
+  it("lists only the chosen environment's projects, within the project scope", () => {
+    expect(combineSidebarScopes({ projectScopeKeys: null, environmentId: laptop, groups })).toEqual(
+      new Set([`${laptop}:api-laptop`, `${laptop}:notes`]),
+    );
+    expect(
+      combineSidebarScopes({
+        projectScopeKeys: new Set([`${studio}:api`, `${laptop}:api-laptop`]),
+        environmentId: laptop,
+        groups,
+      }),
+    ).toEqual(new Set([`${laptop}:api-laptop`]));
+  });
+
+  it("leaves the project scope alone for every environment and hides all on an empty one", () => {
+    const projectScope = new Set([`${studio}:web`]);
+    expect(
+      combineSidebarScopes({ projectScopeKeys: projectScope, environmentId: null, groups }),
+    ).toBe(projectScope);
+    expect(
+      combineSidebarScopes({ projectScopeKeys: null, environmentId: "env-new", groups }),
+    ).toEqual(new Set());
+  });
+
+  it("offers a merged project on each environment it lives on", () => {
+    expect(projectGroupsInEnvironment(groups, laptop).map((group) => group.projectKey)).toEqual([
+      "api",
+      "notes",
+    ]);
+    expect(projectGroupsInEnvironment(groups, null)).toHaveLength(3);
+  });
+
+  it("keeps a stored environment through loading and drops it once the catalog lacks it", () => {
+    const known = new Set([studio]);
+    expect(
+      resolveSidebarEnvironmentScope({
+        storedEnvironmentId: laptop,
+        knownEnvironmentIds: known,
+        catalogReady: false,
+      }),
+    ).toBe(laptop);
+    expect(
+      resolveSidebarEnvironmentScope({
+        storedEnvironmentId: laptop,
+        knownEnvironmentIds: known,
+        catalogReady: true,
+      }),
+    ).toBeNull();
+    expect(
+      resolveSidebarEnvironmentScope({
+        storedEnvironmentId: studio,
+        knownEnvironmentIds: known,
+        catalogReady: true,
+      }),
+    ).toBe(studio);
   });
 });

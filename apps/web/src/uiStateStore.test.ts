@@ -20,6 +20,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     sidebarProjectScopeKeys: [],
+    sidebarEnvironmentScopeId: null,
     threadLastVisitedAtById: {},
     defaultAdvertisedEndpointKey: null,
     pullRequestMergeMethod: "merge",
@@ -118,6 +119,7 @@ describe("parsePersistedState", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
+      sidebarEnvironmentScopeId: null,
       pullRequestMergeMethod: "merge",
     });
   });
@@ -205,6 +207,7 @@ describe("uiStateStore persistence", () => {
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       sidebarProjectScopeKey: null,
+      sidebarEnvironmentScopeId: null,
       pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({
@@ -221,6 +224,19 @@ describe("uiStateStore persistence", () => {
     ) as PersistedUiState;
 
     expect(parsePersistedState(persisted).sidebarProjectScopeKeys).toEqual(keys);
+  });
+
+  it("restores the sidebar environment scope across reloads", () => {
+    persistState(makeUiState({ sidebarEnvironmentScopeId: "env-studio" }));
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+
+    expect(parsePersistedState(persisted).sidebarEnvironmentScopeId).toBe("env-studio");
+    expect(parsePersistedState({ sidebarEnvironmentScopeId: "" }).sidebarEnvironmentScopeId).toBe(
+      null,
+    );
   });
 
   it("keeps a single-project scope readable by older clients", () => {
