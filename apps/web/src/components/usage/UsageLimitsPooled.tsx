@@ -495,7 +495,9 @@ function SegmentTriggers({
           </>
         ) : null}
       </PopoverTrigger>
-      {showAccountName ? <LegendRow payload={payload} color={color} now={now} index={index} /> : null}
+      {showAccountName ? (
+        <LegendRow payload={payload} color={color} now={now} index={index} />
+      ) : null}
     </>
   );
 }
@@ -635,10 +637,7 @@ function PoolWindowRow({
   const singleCredits = singleMember?.account.limits.resetCredits?.availableCount ?? 0;
   return (
     <div
-      className={cn(
-        "flex flex-col gap-1.5",
-        showTopDivider && "border-t border-border/50 pt-2",
-      )}
+      className={cn("flex flex-col gap-1.5", showTopDivider && "border-t border-border/50 pt-2")}
     >
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="flex min-w-0 items-center gap-1.5">
@@ -675,6 +674,7 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   const color = barColor(pool.driver);
   const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
+  const gt = useGT();
   const m = useMessages();
   const sharedEnvLabels = [
     ...new Set(pool.accounts.flatMap((account) => account.environments.map((env) => env.label))),
@@ -701,15 +701,15 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
         <div className="flex shrink-0 items-center gap-1.5 text-2xs">
           {pool.accounts.length > 1 ? (
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground tabular-nums">
-              {pool.accounts.length} 账号
+              {gt("{count} 账号", { count: pool.accounts.length })}
             </span>
           ) : null}
           {sharedEnvLabels.length > 1 ? (
             <span
-              title={sharedEnvLabels.join(", ")}
+              aria-label={sharedEnvLabels.join(", ")}
               className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground tabular-nums"
             >
-              {sharedEnvLabels.length} 机共用
+              {gt("{count} 机共用", { count: sharedEnvLabels.length })}
             </span>
           ) : sharedEnvLabels.length === 1 ? (
             <span className="truncate max-w-28 text-muted-foreground">{sharedEnvLabels[0]}</span>
@@ -735,17 +735,25 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   );
 }
 
-function useCompanionSubscriptions(): readonly CompanionSubscriptionCard[] {
+function useCompanionSubscriptions(refreshKey: number): readonly CompanionSubscriptionCard[] {
   const [cards, setCards] = useState<readonly CompanionSubscriptionCard[]>([]);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads centralized fleet subscriptions from Companion Gateway on mount
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads centralized fleet subscriptions from Companion Gateway on mount and manual refresh
   useEffect(() => {
-    const url = resolveCompanionSubscriptionsUrl(
-      typeof window !== "undefined" ? window.location.origin : null,
+    const currentOrigin = typeof window !== "undefined" ? window.location.origin : null;
+    const baseUrl = resolveCompanionSubscriptionsUrl(
+      currentOrigin,
       (import.meta.env.VITE_COMPANION_ORIGIN as string | undefined) ?? null,
     );
-    if (!url) return;
+    if (!baseUrl) return;
+    let credentials: RequestCredentials = "omit";
+    try {
+      if (currentOrigin && new URL(baseUrl).origin === currentOrigin) {
+        credentials = "include";
+      }
+    } catch {}
+    const url = `${baseUrl}?_r=${refreshKey}`;
     const controller = new AbortController();
-    void fetch(url, { credentials: "include", signal: controller.signal })
+    void fetch(url, { credentials, signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { subscriptions?: CompanionSubscriptionCard[] } | null) => {
         if (data && Array.isArray(data.subscriptions)) {
@@ -754,7 +762,7 @@ function useCompanionSubscriptions(): readonly CompanionSubscriptionCard[] {
       })
       .catch(() => {});
     return () => controller.abort();
-  }, []);
+  }, [refreshKey]);
   return cards;
 }
 
@@ -765,10 +773,18 @@ function CompanionSubscriptionSection({
   readonly card: CompanionSubscriptionCard;
   readonly now: number;
 }) {
+  const gt = useGT();
   const brand = companionBrandFor(card.provider);
   const currencyPrefix =
-    card.currency === "CNY" ? "¥" : card.currency === "USD" ? "$" : card.currency ? `${card.currency} ` : "";
-  const hasBalance = card.balance !== null && card.balance !== undefined && Number.isFinite(card.balance);
+    card.currency === "CNY"
+      ? "¥"
+      : card.currency === "USD"
+        ? "$"
+        : card.currency
+          ? `${card.currency} `
+          : "";
+  const hasBalance =
+    card.balance !== null && card.balance !== undefined && Number.isFinite(card.balance);
   const isLowBalance = hasBalance && (card.balance as number) <= 0;
   return (
     <section
@@ -779,7 +795,7 @@ function CompanionSubscriptionSection({
         <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
           <span
             aria-hidden
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-md text-[10px] font-bold"
+            className="inline-flex size-5 shrink-0 items-center justify-center rounded-md text-3xs font-bold"
             style={{
               backgroundColor: `${brand.color}22`,
               color: brand.color,
@@ -798,10 +814,10 @@ function CompanionSubscriptionSection({
         <div className="flex shrink-0 items-center gap-1.5 text-2xs">
           {card.machines.length > 1 ? (
             <span
-              title={card.machines.join(", ")}
+              aria-label={card.machines.join(", ")}
               className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground tabular-nums"
             >
-              {card.machines.length} 机共用
+              {gt("{count} 机共用", { count: card.machines.length })}
             </span>
           ) : (
             <span className="truncate max-w-28 text-muted-foreground">{card.polledBy}</span>
@@ -811,7 +827,9 @@ function CompanionSubscriptionSection({
 
       {hasBalance ? (
         <div className="flex items-baseline justify-between gap-2 pt-0.5">
-          <span className="text-xs text-muted-foreground">账户余额</span>
+          <span className="text-xs text-muted-foreground">
+            <T>账户余额</T>
+          </span>
           <span
             className={cn(
               "text-sm font-semibold tabular-nums",
@@ -820,7 +838,7 @@ function CompanionSubscriptionSection({
           >
             {currencyPrefix}
             {(card.balance as number).toFixed(2)}
-            {isLowBalance ? " · 余额不足" : ""}
+            {isLowBalance ? gt(" · 余额不足") : ""}
           </span>
         </div>
       ) : null}
@@ -830,7 +848,7 @@ function CompanionSubscriptionSection({
         const resetsIn = formatCompanionResetCountdown(win.resetsAt, now);
         return (
           <div
-            key={`${card.provider}:${win.key}:${index}`}
+            key={`${card.provider}:${win.key}:${win.label}`}
             className={cn(
               "flex flex-col gap-1.5",
               (index > 0 || hasBalance) && "border-t border-border/50 pt-2",
@@ -843,7 +861,7 @@ function CompanionSubscriptionSection({
                   <span className="text-2xs text-muted-foreground">↻ {resetsIn}</span>
                 ) : null}
                 <span className="text-sm font-semibold text-foreground">
-                  {remaining !== null ? `${remaining}%` : "—"}
+                  {remaining !== null ? `${remaining}%` : "-"}
                 </span>
               </span>
             </div>
@@ -860,7 +878,7 @@ function CompanionSubscriptionSection({
       })}
 
       {card.error && card.windows.length === 0 && !hasBalance ? (
-        <p className="text-2xs text-amber-500/90 break-words">{card.error}</p>
+        <p className="text-2xs text-warning break-words">{card.error}</p>
       ) : null}
     </section>
   );
@@ -878,7 +896,7 @@ export function UsageLimitsPooled({
   const [segmentPopover] = useState(() => PopoverCreateHandle<SegmentPayload>());
   const segmentPopoverActions = useRef<PopoverPrimitive.Root.Actions | null>(null);
   const pools = collectLimitPools(collectLimitAccounts(presentations), now);
-  const companionSubscriptions = useCompanionSubscriptions();
+  const companionSubscriptions = useCompanionSubscriptions(now);
   const extraSubscriptions = filterCompanionSubscriptionsForOfficialUsage(
     companionSubscriptions,
     new Set(pools.map((pool) => String(pool.driver))),

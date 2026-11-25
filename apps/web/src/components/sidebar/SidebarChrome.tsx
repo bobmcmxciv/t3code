@@ -1,4 +1,11 @@
-import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ChartNoAxesColumnIcon,
+  LayoutGridIcon,
+  SettingsIcon,
+} from "lucide-react";
+import { resolveCompanionPortalUrl } from "@t3tools/shared/companionSubscriptions";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
 import { memo } from "react";
@@ -256,11 +263,21 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/settings" });
   };
 
+  const companionPortalUrl = resolveCompanionPortalUrl(
+    typeof window !== "undefined" ? window.location.origin : null,
+    (import.meta.env.VITE_COMPANION_ORIGIN as string | undefined) ?? null,
+  );
+
   const handleUsageClick = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
     void navigate({ to: "/usage" });
+  };
+
+  const handleWorkbenchClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/workbench" });
   };
 
   const handleBackClick = () => {
@@ -305,6 +322,13 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label={gt("Usage")}
             onClick={handleUsageClick}
           />
+          {companionPortalUrl ? (
+            <SidebarUtilityItem
+              icon={<LayoutGridIcon />}
+              label={gt("工作台")}
+              onClick={handleWorkbenchClick}
+            />
+          ) : null}
         </>
       )}
       <SidebarThreadUndoNotice />

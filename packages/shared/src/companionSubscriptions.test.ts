@@ -4,6 +4,7 @@ import {
   companionRemainingPercent,
   filterCompanionSubscriptionsForOfficialUsage,
   formatCompanionResetCountdown,
+  resolveCompanionPortalUrl,
   resolveCompanionSubscriptionsUrl,
   type CompanionSubscriptionCard,
 } from "./companionSubscriptions.ts";
@@ -61,11 +62,7 @@ describe("companionSubscriptions", () => {
       [card("openai-codex"), card("antigravity"), card("glm")],
       new Set(),
     );
-    expect(filtered.map((item) => item.provider)).toEqual([
-      "openai-codex",
-      "antigravity",
-      "glm",
-    ]);
+    expect(filtered.map((item) => item.provider)).toEqual(["openai-codex", "antigravity", "glm"]);
   });
 
   it("resolves same-origin URL on configured companion subdomains and falls back cleanly", () => {
@@ -87,6 +84,14 @@ describe("companionSubscriptions", () => {
     );
     expect(resolveCompanionSubscriptionsUrl("http://127.0.0.1:3773", "")).toBeNull();
     expect(resolveCompanionSubscriptionsUrl(null, "")).toBeNull();
+
+    expect(resolveCompanionPortalUrl("t3code://app", configured)).toBe(
+      "https://t3.example.com/_portal/",
+    );
+    expect(resolveCompanionPortalUrl("https://node1.t3.example.com", configured)).toBe(
+      "https://node1.t3.example.com/_portal/",
+    );
+    expect(resolveCompanionPortalUrl("t3code://app", "")).toBeNull();
   });
 
   it("computes remaining percent and countdown labels cleanly", () => {

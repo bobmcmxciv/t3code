@@ -114,14 +114,30 @@ export function companionBrandFor(provider: string): CompanionBrandTheme {
 }
 
 /**
- * Resolves the Companion subscriptions endpoint URL.
- * - When `configuredOrigin` is provided (e.g. via `VITE_COMPANION_ORIGIN` or
- *   `EXPO_PUBLIC_COMPANION_ORIGIN`), prefers same-origin `/_portal/api/subscriptions`
- *   if `currentOrigin` is on the same domain or a subdomain, otherwise uses `configuredOrigin`.
- * - When `configuredOrigin` is unset, falls back to same-origin `/_portal/api/subscriptions`
- *   on non-loopback web origins, and returns `null` on loopback/native origins so no request is sent.
+ * Resolves the Companion subscriptions endpoint (`/_portal/api/subscriptions`).
+ * Prefers same-origin on configured subdomains; returns `null` when unconfigured on loopback/native.
  */
 export function resolveCompanionSubscriptionsUrl(
+  currentOrigin?: string | null,
+  configuredOrigin?: string | null,
+): string | null {
+  const baseOrigin = resolveCompanionOrigin(currentOrigin, configuredOrigin);
+  return baseOrigin ? `${baseOrigin}/_portal/api/subscriptions` : null;
+}
+
+/**
+ * Resolves the Companion Portal / Workbench root URL (`/_portal/`).
+ * Returns `null` when no Companion origin is configured and the current origin is loopback or non-HTTP.
+ */
+export function resolveCompanionPortalUrl(
+  currentOrigin?: string | null,
+  configuredOrigin?: string | null,
+): string | null {
+  const baseOrigin = resolveCompanionOrigin(currentOrigin, configuredOrigin);
+  return baseOrigin ? `${baseOrigin}/_portal/` : null;
+}
+
+function resolveCompanionOrigin(
   currentOrigin?: string | null,
   configuredOrigin?: string | null,
 ): string | null {
@@ -132,18 +148,18 @@ export function resolveCompanionSubscriptionsUrl(
     const currentHost = new URL(normalizedCurrent).hostname.toLowerCase();
     const configuredHost = new URL(normalizedConfigured).hostname.toLowerCase();
     if (currentHost === configuredHost || currentHost.endsWith(`.${configuredHost}`)) {
-      return `${normalizedCurrent}/_portal/api/subscriptions`;
+      return normalizedCurrent;
     }
   }
 
   if (normalizedConfigured) {
-    return `${normalizedConfigured}/_portal/api/subscriptions`;
+    return normalizedConfigured;
   }
 
   if (normalizedCurrent) {
     const currentHost = new URL(normalizedCurrent).hostname;
     if (!isLoopbackHost(currentHost)) {
-      return `${normalizedCurrent}/_portal/api/subscriptions`;
+      return normalizedCurrent;
     }
   }
 
