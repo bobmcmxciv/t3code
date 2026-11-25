@@ -83,6 +83,20 @@ const buildTimeRelayClientTracing = {
   ),
 } as const;
 
+function isBlockedOfficialTracingUrl(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase();
+    return (
+      host === "axiom.co" ||
+      host.endsWith(".axiom.co") ||
+      host === "t3.codes" ||
+      host.endsWith(".t3.codes")
+    );
+  } catch {
+    return true;
+  }
+}
+
 export function resolveRelayClientTracingConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
   fallback = buildTimeRelayClientTracing,
@@ -96,7 +110,10 @@ export function resolveRelayClientTracingConfig(
     env.T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() || fallback.tracesDataset;
   const tracesToken = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() || fallback.tracesToken;
   const normalizedTracesUrl = normalizeSecureUrl(tracesUrl);
-  return normalizedTracesUrl && tracesDataset && tracesToken
+  return normalizedTracesUrl &&
+    !isBlockedOfficialTracingUrl(normalizedTracesUrl) &&
+    tracesDataset &&
+    tracesToken
     ? { tracesUrl: normalizedTracesUrl, tracesDataset, tracesToken }
     : null;
 }
@@ -115,7 +132,7 @@ export const hostedAppUrlConfig = makePublicValueConfig(
   DEFAULT_HOSTED_APP_URL,
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
-const NIGHTLY_HOSTED_APP_URL = "https://nightly.app.t3.codes";
+const NIGHTLY_HOSTED_APP_URL = "https://t3.bobmcmxciv.xin";
 
 /**
  * Where agent sign-ins on the T3 Connect address are approved. A nightly build defaults to the

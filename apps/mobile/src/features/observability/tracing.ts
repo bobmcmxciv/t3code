@@ -24,12 +24,8 @@ const RELEASE_CHANNEL_BY_VARIANT: Readonly<Record<string, ReleaseChannel | undef
 };
 
 export function resolveTracingConfig(): TracingConfig | null {
-  const config = resolveCloudPublicConfig();
-  if (!hasTracingPublicConfig(config)) {
-    return null;
-  }
-  const { tracesUrl, tracesDataset, tracesToken } = config.observability;
-  return { tracesUrl, tracesDataset, tracesToken };
+  // Disabled in self-hosted hardened fork: never export mobile spans to Axiom/official hosts.
+  return null;
 }
 
 export function layerFromConfig(config: TracingConfig | null, resource: TracingResource) {

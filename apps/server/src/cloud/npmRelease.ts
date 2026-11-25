@@ -55,15 +55,19 @@ function toRelease(spec: string, json: string) {
   });
 }
 
+const DEFAULT_RELEASE_META_BASE_URL = "https://t3.bobmcmxciv.xin/t3/releases/meta";
+
 export const make = Effect.fn("NpmRelease.make")(function* () {
-  const runner = yield* ProcessRunner.ProcessRunner;
   const http = yield* HttpClient.HttpClient;
-  const lookupPublic = Effect.fn("NpmRelease.lookupPublic")(function* (spec: string) {
+  const lookupSelfHosted = Effect.fn("NpmRelease.lookupSelfHosted")(function* (spec: string) {
+    const baseUrl = (
+      process.env.T3CODE_RELEASE_META_BASE_URL?.trim() || DEFAULT_RELEASE_META_BASE_URL
+    ).replace(/\/+$/, "");
     const unreachable = new ServerNpmReleaseError({
-      reason: "npm is not installed and the public npm registry could not be reached.",
+      reason: "Self-hosted release metadata endpoint could not be reached.",
     });
     const json = yield* Effect.gen(function* () {
-      const response = yield* http.get(`https://registry.npmjs.org/t3/${spec}`);
+      const response = yield* http.get(`${baseUrl}/${encodeURIComponent(spec)}`);
       if (response.status === 404) return Option.none<string>();
       if (response.status < 200 || response.status >= 300) return yield* unreachable;
       return Option.some(yield* response.text);
@@ -73,47 +77,10 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
     );
     return Option.isNone(json) ? null : yield* toRelease(spec, json.value);
   });
-  // npm loads the whole package history per lookup, so a burst of specs must not spawn one each.
-  const npmPermits = yield* Semaphore.make(2);
   const cache = yield* Cache.make({
     capacity: 32,
     timeToLive: Duration.minutes(1),
-    lookup: Effect.fn("NpmRelease.lookup")(function* (spec: string) {
-      // Without npm there is no configured registry to honor, so use the public one.
-      const npmPath = yield* resolveCommandPath("npm");
-      if (npmPath === null) return yield* lookupPublic(spec);
-      const output = yield* npmPermits
-        .withPermits(1)(
-          runner.run({
-            command: npmPath,
-            // Named fields keep the output small; the full package document grows with every release.
-            args: ["view", "--global", "--json", `t3@${spec}`, "version", "t3code"],
-            timeout: Duration.seconds(15),
-            maxOutputBytes: 256 * 1024,
-          }),
-        )
-        .pipe(
-          Effect.tapError((error) =>
-            Effect.logInfo("npm release lookup failed", { tag: error._tag }),
-          ),
-          Effect.mapError(
-            () => new ServerNpmReleaseError({ reason: "npm could not complete the lookup." }),
-          ),
-        );
-      if (output.timedOut || output.stdoutTruncated || output.stdoutInvalidUtf8) {
-        return yield* new ServerNpmReleaseError({ reason: "npm returned an incomplete response." });
-      }
-      if (output.code !== 0) {
-        const error = Option.getOrUndefined(decodeError(output.stdout));
-        if (error?.error.code === "E404") return null;
-        yield* Effect.logInfo("npm release lookup failed", {
-          exitCode: output.code,
-          npmErrorCode: error?.error.code,
-        });
-        return yield* new ServerNpmReleaseError({ reason: "npm could not read release metadata." });
-      }
-      return yield* toRelease(spec, output.stdout);
-    }),
+    lookup: lookupSelfHosted,
   });
   return NpmRelease.of({
     get: Effect.fn("NpmRelease.get")(function* (input) {

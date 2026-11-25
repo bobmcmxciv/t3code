@@ -137,28 +137,14 @@ const upsertAnonymousId = Effect.gen(function* () {
  * directory. Identity never comes from a provider's sign-in files or account. Both
  * names are sent because the ingest side reads each. Null disables telemetry.
  */
-export const getTelemetryIdentity = upsertAnonymousId.pipe(
-  Effect.map(hashTelemetryId),
-  Effect.catch((error) => logTelemetryIdentityError(error).pipe(Effect.as(null))),
-  Effect.map((installId) => ({ distinctId: installId, installId })),
-  Effect.withSpan("getTelemetryIdentity"),
-);
+export const getTelemetryIdentity = Effect.succeed({
+  distinctId: null as string | null,
+  installId: null as string | null,
+}).pipe(Effect.withSpan("getTelemetryIdentity"));
 
 /**
- * The owner the server can read without a client: the linked T3 Connect
- * account. Clients add `connect` and `device` owners when they connect.
+ * Self-hosted hardened fork: never report linked T3 Connect or provider owners for telemetry.
  */
-export const getServerOwners = Effect.gen(function* () {
-  const secrets = yield* ServerSecretStore.ServerSecretStore;
-  const connectUser = yield* secrets.get(CLOUD_LINKED_USER_ID).pipe(
-    Effect.map(Option.map((bytes) => new TextDecoder().decode(bytes))),
-    Effect.catch((cause) =>
-      Effect.logWarning("Failed to read the linked T3 Connect account for telemetry", {
-        errorTag: cause._tag,
-      }).pipe(Effect.as(Option.none<string>())),
-    ),
-  );
-  return Option.isSome(connectUser) && connectUser.value.trim() !== ""
-    ? [{ source: "connect", ownerId: hashTelemetryId(connectUser.value) } satisfies TelemetryOwner]
-    : [];
-}).pipe(Effect.withSpan("getServerOwners"));
+export const getServerOwners: Effect.Effect<ReadonlyArray<TelemetryOwner>> = Effect.succeed(
+  [],
+).pipe(Effect.withSpan("getServerOwners"));

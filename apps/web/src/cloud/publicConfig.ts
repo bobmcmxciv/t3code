@@ -71,27 +71,11 @@ export function setServerRelayTelemetry(allowed: boolean | null): void {
 }
 
 export function relayTelemetryEnabled(): boolean | null {
-  if (typeof window === "undefined") return true;
-  if (window.desktopBridge) {
-    desktopRelayTelemetry ??= window.desktopBridge.getRelayTelemetryEnabled();
-    return desktopRelayTelemetry;
-  }
-  return serverRelayTelemetry ?? (isHostedStaticApp() ? true : null);
+  return false;
 }
 
 export function resolveRelayTracingConfig() {
-  // The relay exporter is created during module initialization, so this must be synchronous.
-  if (relayTelemetryEnabled() === false) {
-    return null;
-  }
-  const { relayTracing } = resolveCloudPublicConfig();
-  return relayTracing.tracesUrl && relayTracing.tracesDataset && relayTracing.tracesToken
-    ? {
-        tracesUrl: relayTracing.tracesUrl,
-        tracesDataset: relayTracing.tracesDataset,
-        tracesToken: relayTracing.tracesToken,
-      }
-    : null;
+  return null;
 }
 
 export function hasCloudPublicConfig(): boolean {

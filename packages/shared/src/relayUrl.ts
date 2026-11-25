@@ -1,3 +1,13 @@
+export function isOfficialT3HostedDomain(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  return (
+    lower === "t3.codes" ||
+    lower.endsWith(".t3.codes") ||
+    lower === "ping.gg" ||
+    lower.endsWith(".ping.gg")
+  );
+}
+
 export function normalizeSecureRelayUrl(value: string): string | null {
   try {
     const url = new URL(value.trim());
@@ -7,7 +17,8 @@ export function normalizeSecureRelayUrl(value: string): string | null {
       url.password.length > 0 ||
       url.search.length > 0 ||
       url.hash.length > 0 ||
-      !/^\/+$/u.test(url.pathname)
+      !/^\/+$/u.test(url.pathname) ||
+      isOfficialT3HostedDomain(url.hostname)
     ) {
       return null;
     }

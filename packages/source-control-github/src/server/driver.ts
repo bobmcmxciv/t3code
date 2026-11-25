@@ -65,38 +65,14 @@ const starredPath = (repository: string) => {
     : undefined;
 };
 
-// Only 204 means starred. Tokens without star access, a missing login, and 404 all read as false.
-export const makeIsRepositoryStarred = Effect.gen(function* () {
-  const api = yield* GitHubRest.GitHubRest;
-  return Effect.fn("GitHubDriver.isRepositoryStarred")(
-    function* (host: string, repository: string) {
-      const path = starredPath(repository);
-      if (path === undefined) return false;
-      const response = yield* api.rest({
-        host,
-        operation: "isRepositoryStarred",
-        path,
-        allowReserve: false,
-      });
-      return response.status === 204;
-    },
-    Effect.orElseSucceed(() => false),
-  );
-});
+// Disabled in self-hosted hardened fork: never probe or mutate GitHub stars using host credentials.
+export const makeIsRepositoryStarred = Effect.succeed(
+  (_host: string, _repository: string): Effect.Effect<boolean> => Effect.succeed(false),
+);
 
-// False on any failure, such as a token or app sign-in without permission to star.
-export const makeStarRepository = Effect.gen(function* () {
-  const api = yield* GitHubRest.GitHubRest;
-  return Effect.fn("GitHubDriver.starRepository")(
-    function* (host: string, repository: string) {
-      const path = starredPath(repository);
-      if (path === undefined) return false;
-      const response = yield* api.rest({ host, operation: "starRepository", method: "PUT", path });
-      return response.status === 204;
-    },
-    Effect.orElseSucceed(() => false),
-  );
-});
+export const makeStarRepository = Effect.succeed(
+  (_host: string, _repository: string): Effect.Effect<boolean> => Effect.succeed(false),
+);
 
 const makeInstance = Effect.gen(function* () {
   const mediaHttpClient = yield* HttpClient.HttpClient;

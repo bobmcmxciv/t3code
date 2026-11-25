@@ -25,8 +25,27 @@ import {
 } from "./providerCompatibility.ts";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 
-const MODEL_MANIFEST_URL =
-  "https://raw.githubusercontent.com/pingdotgg/t3code/main/apps/server/src/provider/model-manifest.json";
+const DEFAULT_MODEL_MANIFEST_URL = "https://t3.bobmcmxciv.xin/t3/model-manifest.json";
+
+function resolveModelManifestUrl(): string | null {
+  const configured = process.env.T3CODE_MODEL_MANIFEST_URL?.trim();
+  const target = configured === undefined ? DEFAULT_MODEL_MANIFEST_URL : configured;
+  if (!target) return null;
+  try {
+    const parsed = new URL(target);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "t3.codes" ||
+      host.endsWith(".t3.codes") ||
+      (host === "raw.githubusercontent.com" && parsed.pathname.toLowerCase().startsWith("/pingdotgg/"))
+    ) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
 
 const MANIFEST_TTL_MS = 60 * 60 * 1000;
 
@@ -253,8 +272,10 @@ export const make = Effect.gen(function* () {
     );
     if (settings !== null && !settings.enableProviderUpdateChecks) return manifest;
 
+    const manifestUrl = resolveModelManifestUrl();
+    if (manifestUrl === null) return manifest;
     lastAttemptMs = now;
-    const fetched = yield* httpClient.get(MODEL_MANIFEST_URL).pipe(
+    const fetched = yield* httpClient.get(manifestUrl).pipe(
       Effect.flatMap(HttpClientResponse.filterStatusOk),
       Effect.flatMap((response) => response.json),
       Effect.flatMap((json) => decodeManifest(json)),

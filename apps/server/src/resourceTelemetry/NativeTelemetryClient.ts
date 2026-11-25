@@ -706,74 +706,85 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
     ),
   );
 
-  yield* Effect.gen(function* () {
-    let failures: ReadonlyArray<number> = [];
-    let restartAttempt = 0;
+  if (process.env.T3CODE_RESOURCE_MONITOR_ENABLED === "true") {
+    yield* Effect.gen(function* () {
+      let failures: ReadonlyArray<number> = [];
+      let restartAttempt = 0;
 
-    while (true) {
-      const result = yield* Effect.result(runAttempt);
-      if (Result.isSuccess(result)) {
-        return;
-      }
+      while (true) {
+        const result = yield* Effect.result(runAttempt);
+        if (Result.isSuccess(result)) {
+          return;
+        }
 
-      const error = result.failure;
-      const now = DateTime.toEpochMillis(yield* DateTime.now);
-      const recentFailures = retainRecentNativeTelemetryFailures(failures, now);
-      if (recentFailures.length === 0) {
-        restartAttempt = 0;
-      }
-      failures = [...recentFailures, now];
-      const exhausted = failures.length >= MAX_FAILURES_PER_WINDOW;
-      yield* Ref.update(state, (current) => ({
-        ...current,
-        status: exhausted ? ("unavailable" as const) : ("degraded" as const),
-        hello: Option.none(),
-        lastError: Option.some(errorMessage(error)),
-        restartCount: current.restartCount + 1,
-      }));
-      yield* publishHealth;
-      yield* failPending(error);
-
-      if (exhausted) {
-        yield* Queue.take(retryQueue);
-        failures = [];
-        restartAttempt = 0;
+        const error = result.failure;
+        const now = DateTime.toEpochMillis(yield* DateTime.now);
+        const recentFailures = retainRecentNativeTelemetryFailures(failures, now);
+        if (recentFailures.length === 0) {
+          restartAttempt = 0;
+        }
+        failures = [...recentFailures, now];
+        const exhausted = failures.length >= MAX_FAILURES_PER_WINDOW;
         yield* Ref.update(state, (current) => ({
           ...current,
-          status: "starting" as const,
+          status: exhausted ? ("unavailable" as const) : ("degraded" as const),
           hello: Option.none(),
-          lastError: Option.none(),
+          lastError: Option.some(errorMessage(error)),
+          restartCount: current.restartCount + 1,
         }));
         yield* publishHealth;
-        continue;
-      }
+        yield* failPending(error);
 
-      const manuallyRetried = yield* Effect.raceFirst(
-        Effect.sleep(restartDelay(restartAttempt)).pipe(Effect.as(false)),
-        Queue.take(retryQueue).pipe(Effect.as(true)),
-      );
-      restartAttempt = manuallyRetried ? 0 : restartAttempt + 1;
-    }
-  }).pipe(
-    Effect.catchCause((cause) =>
-      Cause.hasInterruptsOnly(cause)
-        ? Effect.void
-        : Ref.update(state, (current) => ({
+        if (exhausted) {
+          yield* Queue.take(retryQueue);
+          failures = [];
+          restartAttempt = 0;
+          yield* Ref.update(state, (current) => ({
             ...current,
-            status: "unavailable" as const,
+            status: "starting" as const,
             hello: Option.none(),
-            lastError: Option.some("Resource monitor supervisor stopped unexpectedly."),
-          })).pipe(
-            Effect.andThen(publishHealth),
-            Effect.andThen(
-              Effect.logWarning("Resource monitor supervisor failed", {
-                cause: Cause.pretty(cause),
-              }),
+            lastError: Option.none(),
+          }));
+          yield* publishHealth;
+          continue;
+        }
+
+        const manuallyRetried = yield* Effect.raceFirst(
+          Effect.sleep(restartDelay(restartAttempt)).pipe(Effect.as(false)),
+          Queue.take(retryQueue).pipe(Effect.as(true)),
+        );
+        restartAttempt = manuallyRetried ? 0 : restartAttempt + 1;
+      }
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : Ref.update(state, (current) => ({
+              ...current,
+              status: "unavailable" as const,
+              hello: Option.none(),
+              lastError: Option.some("Resource monitor supervisor stopped unexpectedly."),
+            })).pipe(
+              Effect.andThen(publishHealth),
+              Effect.andThen(
+                Effect.logWarning("Resource monitor supervisor failed", {
+                  cause: Cause.pretty(cause),
+                }),
+              ),
             ),
-          ),
-    ),
-    Effect.forkScoped,
-  );
+      ),
+      Effect.forkScoped,
+    );
+  } else {
+    yield* Ref.update(state, (current) => ({
+      ...current,
+      status: "unavailable" as const,
+      hello: Option.none(),
+      lastError: Option.some(
+        "Resource monitor is disabled by default (set T3CODE_RESOURCE_MONITOR_ENABLED=true to enable).",
+      ),
+    }));
+  }
 
   // Desktop power samples reach this even when the control state has not changed.
   const applyCollectionControl = Effect.fnUntraced(function* (

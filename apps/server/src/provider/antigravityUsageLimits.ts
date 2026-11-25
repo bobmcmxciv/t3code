@@ -353,6 +353,13 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     if (input.authMethod !== "oauth-personal" && input.authMethod !== "oauth-business") {
       return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
     }
+    if (process.env.T3CODE_ENABLE_ANTIGRAVITY_V1INTERNAL_PROBE !== "true") {
+      return makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message: "Antigravity v1internal quota probe is disabled in this hardened build.",
+      });
+    }
     const now = yield* Clock.currentTimeMillis;
     let accessToken: string;
     let account: string;

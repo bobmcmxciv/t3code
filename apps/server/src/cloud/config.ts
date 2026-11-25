@@ -2,6 +2,7 @@ import {
   RelayManagedEndpointOrigin,
   RelayManagedEndpointRuntimeConfig,
 } from "@t3tools/contracts/relay";
+import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -90,9 +91,10 @@ export const readRelayConnection = Effect.all([
   readSecretString(RELAY_URL_SECRET),
   readSecretString(RELAY_ENVIRONMENT_CREDENTIAL_SECRET),
 ]).pipe(
-  Effect.map(([url, environmentCredential]) =>
-    url && environmentCredential ? { url, environmentCredential } : null,
-  ),
+  Effect.map(([url, environmentCredential]) => {
+    const normalized = url ? normalizeSecureRelayUrl(url) : null;
+    return normalized && environmentCredential ? { url: normalized, environmentCredential } : null;
+  }),
 );
 
 export const readHoldWebhooksWhileOffline = readSecretString(

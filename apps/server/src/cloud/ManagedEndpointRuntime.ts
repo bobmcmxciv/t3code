@@ -889,7 +889,11 @@ export const make = Effect.gen(function* () {
     (requested: RelayManagedEndpointRuntimeConfig | null) =>
       reconcileSemaphore.withPermits(1)(
         Effect.gen(function* () {
-          const config = connectAllowed ? requested : null;
+          // Self-hosted hardened fork: never spawn official Cloudflare Tunnel connectors unless
+          // explicitly opted in; remote access runs over our ECS Chisel/SSH gateway.
+          const tunnelAllowed =
+            connectAllowed && process.env.T3CODE_ENABLE_CLOUDFLARE_TUNNEL === "true";
+          const config = tunnelAllowed ? requested : null;
           // Keep backoff when recovery returns the same tunnel/token, or every recovery respawns a crash loop.
           const desired = yield* Ref.get(desiredConfigRef);
           const unchanged =
