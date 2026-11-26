@@ -13,9 +13,18 @@ describe("provider auth return destinations", () => {
       ).toBe(`${scheme}://app/settings/providers?instanceId=work`);
     },
   );
+  it.each(["https://t3.bobmcmxciv.xin/settings", "https://vircs.t3.bobmcmxciv.xin/welcome"])(
+    "returns to the self-hosted app at %s",
+    (url) => expect(providerAuthReturnUrl(url)).toBe(url),
+  );
   it.each([
     "t3code://attacker/welcome",
     "t3code://app/welcome/../evil",
     "https://attacker.example/welcome",
+    "http://vircs.t3.bobmcmxciv.xin/welcome",
+    "https://vircs.t3.bobmcmxciv.xin:8443/welcome",
+    "https://a.b.t3.bobmcmxciv.xin/welcome",
+    "https://evil-t3.bobmcmxciv.xin/welcome",
+    "https://t3.bobmcmxciv.xin.attacker.example/welcome",
   ])("rejects %s", (url) => expect(providerAuthReturnUrl(url)).toBeUndefined());
 });

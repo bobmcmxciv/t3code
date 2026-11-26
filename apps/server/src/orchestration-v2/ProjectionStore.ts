@@ -2606,44 +2606,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 deleted_at = excluded.deleted_at,
                 payload_json = excluded.payload_json
             `;
-              if (event.type === "thread.deleted") {
-                const activeFork = yield* sql<{ readonly present: number }>`
-                  SELECT 1 AS present
-                  FROM orchestration_v2_projection_threads
-                  WHERE deleted_at IS NULL
-                    AND json_extract(payload_json, '$.forkedFrom.threadId') = ${event.threadId}
-                  LIMIT 1
-                `;
-                if (activeFork.length === 0) {
-                  yield* sql`
-                    UPDATE orchestration_v2_projection_threads
-                    SET title = '[deleted]'
-                    WHERE thread_id = ${event.threadId}
-                  `;
-                  yield* sql`DELETE FROM orchestration_v2_projection_messages WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_turn_items WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_plans WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_nodes WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_runs WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_run_attempts WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_provider_turns WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_runtime_requests WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_checkpoints WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_checkpoint_scopes WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_context_handoffs WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_turn_item_positions WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_turn_item_counts WHERE thread_id = ${event.threadId}`;
-                  yield* sql`DELETE FROM orchestration_v2_projection_thread_item_counts WHERE thread_id = ${event.threadId}`;
-                  yield* sql`
-                    DELETE FROM orchestration_v2_events
-                    WHERE thread_id = ${event.threadId} AND event_type <> 'thread.deleted'
-                  `;
-                  yield* sql`
-                    DELETE FROM orchestration_events
-                    WHERE aggregate_kind = 'thread' AND stream_id = ${event.threadId}
-                  `;
-                }
-              }
               // EventSink applies committed events serially; retries retain the original membership.
               if (event.type === "thread.created" && event.payload.forkedFrom?.type === "run") {
                 const fork = event.payload.forkedFrom;

@@ -1,4 +1,5 @@
-export function isOfficialT3HostedDomain(hostname: string): boolean {
+/** Official T3 relay hosts; this fork never connects to them. */
+function isOfficialT3HostedDomain(hostname: string): boolean {
   const lower = hostname.toLowerCase();
   return (
     lower === "t3.codes" ||

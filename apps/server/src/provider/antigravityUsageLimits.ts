@@ -21,6 +21,14 @@ export function antigravityUserAgent(platform: NodeJS.Platform, architecture: No
   return `antigravity/hub/2.24.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`;
 }
 
+/** Google forbids third-party calls to Antigravity's v1internal API; every caller needs this opt-in. */
+export const ANTIGRAVITY_V1INTERNAL_DISABLED_MESSAGE =
+  "Antigravity v1internal quota probe is disabled in this hardened build.";
+
+export function antigravityV1internalProbeEnabled(): boolean {
+  return process.env.T3CODE_ENABLE_ANTIGRAVITY_V1INTERNAL_PROBE === "true";
+}
+
 const DAILY_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
 const PROD_ENDPOINT = "https://cloudcode-pa.googleapis.com";
 // The ACP runtime meters consumer tiers on the daily host and GCP-terms tiers on prod.
@@ -353,11 +361,11 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     if (input.authMethod !== "oauth-personal" && input.authMethod !== "oauth-business") {
       return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
     }
-    if (process.env.T3CODE_ENABLE_ANTIGRAVITY_V1INTERNAL_PROBE !== "true") {
+    if (!antigravityV1internalProbeEnabled()) {
       return makeUnavailableUsageLimits({
         checkedAt,
         reason: "unsupported",
-        message: "Antigravity v1internal quota probe is disabled in this hardened build.",
+        message: ANTIGRAVITY_V1INTERNAL_DISABLED_MESSAGE,
       });
     }
     const now = yield* Clock.currentTimeMillis;

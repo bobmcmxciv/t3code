@@ -15,6 +15,7 @@ import {
   ResourceMonitorEvent as ResourceMonitorEventSchema,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -706,7 +707,12 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
     ),
   );
 
-  if (process.env.T3CODE_RESOURCE_MONITOR_ENABLED === "true") {
+  // The monitor enumerates every host process; it runs only when the host opts in.
+  const monitorEnabled = yield* Config.Boolean("T3CODE_RESOURCE_MONITOR_ENABLED").pipe(
+    Config.withDefault(false),
+    Effect.orElseSucceed(() => false),
+  );
+  if (monitorEnabled) {
     yield* Effect.gen(function* () {
       let failures: ReadonlyArray<number> = [];
       let restartAttempt = 0;

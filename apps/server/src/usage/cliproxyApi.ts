@@ -24,9 +24,11 @@ import { codexPlanLabel } from "../provider/CodexProvider.ts";
 import { codexRateLimitsToLimits } from "../provider/codexUsageLimits.ts";
 import { claudeUsageResponseToLimits } from "../provider/claudeUsageLimits.ts";
 import {
+  ANTIGRAVITY_V1INTERNAL_DISABLED_MESSAGE,
   antigravityAccountFingerprint,
   antigravitySummaryWindows,
   antigravityUserAgent,
+  antigravityV1internalProbeEnabled,
 } from "../provider/antigravityUsageLimits.ts";
 import {
   makeUnavailableUsageLimits,
@@ -374,6 +376,11 @@ const HUB_PROVIDERS = new Map<string, HubProvider>([
         "User-Agent": antigravityUserAgent(platform, architecture),
       }),
       read: Effect.fnUntraced(function* ({ account, call, checkedAt }) {
+        if (!antigravityV1internalProbeEnabled()) {
+          return yield* new UsageLimitSourceError({
+            detail: ANTIGRAVITY_V1INTERNAL_DISABLED_MESSAGE,
+          });
+        }
         const project = account.project_id?.trim();
         if (!project) {
           return yield* new UsageLimitSourceError({ detail: "No Antigravity project reported." });

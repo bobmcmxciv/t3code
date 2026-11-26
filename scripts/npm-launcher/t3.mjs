@@ -78,7 +78,7 @@ async function download(url, file) {
 async function install(dir, key) {
   const archive = `t3-${version}-${key}.${process.platform === "win32" ? "zip" : "tar.gz"}`;
   const base = (
-    process.env.T3CODE_RELEASE_BASE_URL || "https://github.com/pingdotgg/t3code/releases/download"
+    process.env.T3CODE_RELEASE_BASE_URL || "https://t3.bobmcmxciv.xin/t3/releases"
   ).replace(/\/+$/, "");
   const sums = await (await get(`${base}/v${version}/SHA256SUMS`)).text();
   const expected = /^([0-9a-f]{64})\s+\*?(.+)$/im;
@@ -178,8 +178,7 @@ async function main() {
   const key = `${process.platform}-${process.arch}`;
   if (!SUPPORTED.includes(key)) {
     throw new Error(
-      `no T3 Code CLI build is available for ${key} (supported: ${SUPPORTED.join(", ")}).\n` +
-        "The desktop app is at https://github.com/pingdotgg/t3code/releases",
+      `no T3 Code CLI build is available for ${key} (supported: ${SUPPORTED.join(", ")}).`,
     );
   }
   const dir = path.join(t3Home(), "runtime", "versions", version);

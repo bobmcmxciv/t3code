@@ -80,14 +80,11 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
       if (failures-- > 0) return response.writeHead(504).end();
       const url = new URL(request.url ?? "/", "http://fixture");
       const body =
-        url.pathname === "/pingdotgg/t3code/releases/latest" &&
-        request.headers.accept === "application/json"
-          ? { tag_name: "v1.2.3" }
-          : url.pathname === "/repos/pingdotgg/t3code/releases"
-            ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
-                url.searchParams.get("page") ?? ""
-              ]
-            : undefined;
+        url.pathname === "/index.json"
+          ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
+              url.searchParams.get("page") ?? ""
+            ]
+          : undefined;
       if (body === undefined) response.statusCode = 404;
       // The API pretty-prints and the installer reads it line by line.
       response.end(JSON.stringify(body ?? [], null, 2));
@@ -100,12 +97,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
       const origin = `http://127.0.0.1:${address.port}`;
-      const source = await NodeFSP.readFile(
-        NodePath.resolve(import.meta.dirname, "install.sh"),
-        "utf8",
-      );
-      const installer = NodePath.join(root, "install.sh");
-      await NodeFSP.writeFile(installer, source.replace(/https:\/\/(api\.)?github\.com/g, origin));
+      const installer = NodePath.resolve(import.meta.dirname, "install.sh");
       const { code, output } = await new Promise<{ code: number | null; output: string }>(
         (resolve, reject) => {
           const child = NodeChildProcess.spawn("sh", [installer], {

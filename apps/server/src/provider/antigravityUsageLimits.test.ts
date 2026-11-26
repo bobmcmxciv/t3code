@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "@effect/vitest";
+import { afterAll, beforeAll, vi } from "vite-plus/test";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -145,7 +146,23 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
   return { ...usage, requests, writeToken, tokenPath };
 });
 
+describe("Antigravity v1internal opt-in", () => {
+  it.effect("never refreshes a token or calls Google unless the probe is opted in", () =>
+    Effect.gen(function* () {
+      const { probe, requests } = yield* fixture();
+      const result = yield* probe;
+      expect(result.unavailable?.reason).toBe("unsupported");
+      expect(result.unavailable?.message).toMatch(/disabled/);
+      expect(requests).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+});
+
 describe("Antigravity subscription limits", () => {
+  // The probe calls Google's v1internal API only on explicit opt-in; these tests cover that path.
+  beforeAll(() => vi.stubEnv("T3CODE_ENABLE_ANTIGRAVITY_V1INTERNAL_PROBE", "true"));
+  afterAll(() => vi.unstubAllEnvs());
+
   // Oracle: the 10:16 UTC payload and its narrow Workaround rule.
   it.effect("omits rolling resets for untouched summary buckets and keeps used Gemini resets", () =>
     Effect.gen(function* () {

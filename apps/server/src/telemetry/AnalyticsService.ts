@@ -173,9 +173,9 @@ export const make = Effect.gen(function* () {
     isBlockedOfficialTelemetryHost(telemetryConfig.posthogHost)
   ) {
     return AnalyticsService.of({
-      record: () => Effect.succeed(false),
+      record: Effect.fn("AnalyticsService.record")(() => Effect.succeed(false)),
       flush: Effect.void,
-      recordOwners: () => Effect.void,
+      recordOwners: Effect.fn("AnalyticsService.recordOwners")(() => Effect.void),
     });
   }
   const httpClient = yield* HttpClient.HttpClient;

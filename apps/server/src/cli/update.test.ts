@@ -52,15 +52,14 @@ const unrelatedLsof = ProcessRunner.ProcessRunner.of({
 
 afterEach(() => vi.restoreAllMocks());
 
-it.effect("authenticates each release page until the requested channel is found", () =>
+it.effect("pages the self-hosted release index without forwarding GitHub tokens", () =>
   Effect.gen(function* () {
     const pages: string[] = [];
     const httpClient = HttpClient.make((request) => {
       const url = new URL(request.url);
-      assert.equal(url.origin, "https://api.github.com");
-      assert.equal(url.pathname, "/repos/pingdotgg/t3code/releases");
-      assert.equal(request.headers.accept, "application/vnd.github+json");
-      assert.equal(request.headers.authorization, "Bearer gh-token");
+      assert.equal(url.origin, "https://t3.bobmcmxciv.xin");
+      assert.equal(url.pathname, "/t3/releases/index.json");
+      assert.equal(request.headers.authorization, undefined);
       const page = url.searchParams.get("page") ?? "";
       pages.push(page);
       const tag_name = page === "1" ? "v1.2.4-preview.20260101.1" : "v1.2.3";

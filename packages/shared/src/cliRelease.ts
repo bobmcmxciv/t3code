@@ -3,8 +3,10 @@ import * as Schema from "effect/Schema";
 
 import { compareSemverVersions } from "./semver.ts";
 
-const CLI_RELEASE_REPOSITORY = "bobmcmxciv/t3code";
-export const CLI_RELEASES_PAGE_URL = "https://t3.bobmcmxciv.xin/_portal/";
+/** The self-hosted release mirror, laid out like GitHub's release downloads. */
+const CLI_RELEASE_DEFAULT_BASE_URL = "https://t3.bobmcmxciv.xin/t3/releases";
+/** Also serves GitHub-compatible `/latest` (JSON) and `.atom` release feeds. */
+export const CLI_RELEASES_PAGE_URL = CLI_RELEASE_DEFAULT_BASE_URL;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
 
@@ -41,8 +43,6 @@ export function cliArchiveTarCommand(
 export function cliArchiveFileName(version: string, platformKey: CliArchivePlatformKey): string {
   return `t3-${version}-${platformKey}.${platformKey.startsWith("win32") ? "zip" : "tar.gz"}`;
 }
-
-const CLI_RELEASE_DEFAULT_BASE_URL = "https://t3.bobmcmxciv.xin/t3/releases";
 
 export function cliReleaseDownloadBaseUrl(
   version: string,
@@ -131,9 +131,9 @@ export function acceptsTrackSwitchRelease(
   );
 }
 
-/** Fetch release index from our self-hosted ECS release hub. */
+/** Page until the channel matches; nightlies can push preview/stable releases past the first page. */
 export function cliReleaseIndexPageUrl(page: number): string {
-  return `https://t3.bobmcmxciv.xin/t3/releases/index.json?page=${page}`;
+  return `${CLI_RELEASE_DEFAULT_BASE_URL}/index.json?page=${page}`;
 }
 
 /** Draft assets are not downloadable. */

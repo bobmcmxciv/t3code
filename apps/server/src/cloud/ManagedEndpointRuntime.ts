@@ -233,8 +233,14 @@ export const make = Effect.gen(function* () {
   const relayClientLedger = yield* RelayClientLedger.RelayClientLedger;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
-  // Without T3 Connect no connector ever runs, whoever asks for one.
-  const connectAllowed = ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy);
+  // Without T3 Connect no connector ever runs, whoever asks for one. This fork also needs an
+  // explicit opt-in before it spawns Cloudflare connectors; remote access runs over our ECS gateway.
+  const tunnelAllowed =
+    ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy) &&
+    (yield* Config.Boolean("T3CODE_ENABLE_CLOUDFLARE_TUNNEL").pipe(
+      Config.withDefault(false),
+      Effect.orElseSucceed(() => false),
+    ));
   const activeRef = yield* Ref.make<ActiveConnector | null>(null);
   const desiredConfigRef = yield* Ref.make<RelayManagedEndpointRuntimeConfig | null>(null);
   const recoveryRequests = yield* Queue.sliding<RelayManagedEndpointRuntimeConfig>(1);
@@ -894,10 +900,6 @@ export const make = Effect.gen(function* () {
     (requested: RelayManagedEndpointRuntimeConfig | null) =>
       reconcileSemaphore.withPermits(1)(
         Effect.gen(function* () {
-          // Self-hosted hardened fork: never spawn official Cloudflare Tunnel connectors unless
-          // explicitly opted in; remote access runs over our ECS Chisel/SSH gateway.
-          const tunnelAllowed =
-            connectAllowed && process.env.T3CODE_ENABLE_CLOUDFLARE_TUNNEL === "true";
           const config = tunnelAllowed ? requested : null;
           // Keep backoff when recovery returns the same tunnel/token, or every recovery respawns a crash loop.
           const desired = yield* Ref.get(desiredConfigRef);

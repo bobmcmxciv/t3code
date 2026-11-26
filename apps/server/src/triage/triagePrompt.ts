@@ -69,7 +69,7 @@ different code depending on it:
 
 - How is T3 Code running on this machine: \`npx t3 serve\` in a terminal, the
   background service, or the desktop app?
-- Which surface is the user connecting from: the website (app.t3.codes), the
+- Which surface is the user connecting from: the website (t3.bobmcmxciv.xin), the
   desktop app against a local server, the desktop app against a remote server,
   or the mobile app?
 
@@ -302,7 +302,7 @@ ${entry.before}
 - OS: ${input.os}
 - Node: ${input.nodeVersion}
 ${entry.after === undefined ? "" : `${entry.after}\n`}- Server process: ${input.server}
-- Repo: https://github.com/pingdotgg/t3code
+- Repo: https://github.com/bobmcmxciv/t3code
 ${input.entry.kind === "app" ? IN_APP_SECTION : ""}${input.sourceClone === undefined ? "" : sourceSection(input.sourceClone)}
 ## Paths
 

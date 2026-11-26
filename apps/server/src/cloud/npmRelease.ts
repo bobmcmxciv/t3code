@@ -3,28 +3,22 @@ import {
   ServerNpmReleaseInput,
   type ServerNpmRelease,
 } from "@t3tools/contracts";
-import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+import { cliReleaseChannelOf, npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
 import * as Cache from "effect/Cache";
+import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import { FetchHttpClient, HttpClient } from "effect/http";
-
-import * as ProcessRunner from "../processRunner.ts";
 
 const Version = Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/));
 const Manifest = Schema.Struct({ version: Version, t3code: Schema.optionalKey(Schema.Unknown) });
-// npm prints a bare version string when the release has no `t3code` field.
+// A mirror may answer with a bare version string when the release has no `t3code` field.
 const decodeManifest = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Union([Manifest, Schema.Tuple([Manifest]), Version])),
-);
-const decodeError = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Struct({ error: Schema.Struct({ code: Schema.String }) })),
 );
 const decodeInput = Schema.decodeUnknownEffect(ServerNpmReleaseInput);
 
@@ -37,15 +31,24 @@ export class NpmRelease extends Context.Service<
   }
 >()("t3/cloud/npmRelease") {}
 
+/** A track spec only matches a release on that track, so a mirror cannot pass a build across tracks. */
+function specMatches(spec: string, version: string) {
+  if (spec === "latest") return cliReleaseChannelOf(version) === "stable";
+  if (spec === "nightly") return cliReleaseChannelOf(version) === "nightly";
+  return version === spec;
+}
+
 function toRelease(spec: string, json: string) {
   const decoded = Option.getOrUndefined(decodeManifest(json));
   const manifest =
     typeof decoded === "string"
       ? { version: decoded }
       : decoded && ("version" in decoded ? decoded : decoded[0]);
-  if (!manifest || (spec !== "latest" && spec !== "nightly" && manifest.version !== spec)) {
+  if (!manifest || !specMatches(spec, manifest.version)) {
     return Effect.fail(
-      new ServerNpmReleaseError({ reason: "npm returned invalid release metadata." }),
+      new ServerNpmReleaseError({
+        reason: "The release mirror returned invalid release metadata.",
+      }),
     );
   }
   const databaseMigration = npmReleaseDatabaseMigration(manifest);
@@ -59,10 +62,12 @@ const DEFAULT_RELEASE_META_BASE_URL = "https://t3.bobmcmxciv.xin/t3/releases/met
 
 export const make = Effect.fn("NpmRelease.make")(function* () {
   const http = yield* HttpClient.HttpClient;
+  const configuredBaseUrl = yield* Config.String("T3CODE_RELEASE_META_BASE_URL").pipe(
+    Config.withDefault(""),
+    Effect.orElseSucceed(() => ""),
+  );
+  const baseUrl = (configuredBaseUrl.trim() || DEFAULT_RELEASE_META_BASE_URL).replace(/\/+$/, "");
   const lookupSelfHosted = Effect.fn("NpmRelease.lookupSelfHosted")(function* (spec: string) {
-    const baseUrl = (
-      process.env.T3CODE_RELEASE_META_BASE_URL?.trim() || DEFAULT_RELEASE_META_BASE_URL
-    ).replace(/\/+$/, "");
     const unreachable = new ServerNpmReleaseError({
       reason: "Self-hosted release metadata endpoint could not be reached.",
     });
@@ -94,6 +99,4 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
   });
 });
 
-export const layer = Layer.effect(NpmRelease, make()).pipe(
-  Layer.provide([ProcessRunner.layer, FetchHttpClient.layer]),
-);
+export const layer = Layer.effect(NpmRelease, make()).pipe(Layer.provide(FetchHttpClient.layer));

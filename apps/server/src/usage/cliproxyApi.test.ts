@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
+import { afterAll, beforeAll, vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -205,6 +206,10 @@ describe("CLIProxyAPI hub failures", () => {
 });
 
 describe("CLIProxyAPI built-in management API", () => {
+  // Antigravity quota reads go through Google's v1internal API only on explicit opt-in.
+  beforeAll(() => vi.stubEnv("T3CODE_ENABLE_ANTIGRAVITY_V1INTERNAL_PROBE", "true"));
+  afterAll(() => vi.unstubAllEnvs());
+
   it.effect(
     "reads both accounts and their earliest unexpired credits without plugin endpoints",
     () =>
@@ -748,6 +753,29 @@ describe("CLIProxyAPI built-in management API", () => {
       const result = yield* api.consume(config, "missing.json", "credit").pipe(Effect.result);
       expect(result._tag).toBe("Failure");
       expect(test.requests).toHaveLength(1);
+    }),
+  );
+});
+
+describe("CLIProxyAPI Antigravity quota opt-in", () => {
+  it.effect("never asks the hub to call Google's v1internal API unless opted in", () =>
+    Effect.gen(function* () {
+      const test = fixture({
+        accounts: [
+          {
+            id: "antigravity.json",
+            auth_index: "g",
+            provider: "antigravity",
+            email: "g@example.com",
+            project_id: "project-7",
+          },
+        ],
+        upstream: () => ({ status: 200, body: {} }),
+      });
+      yield* (yield* test.api).readAccounts(config).pipe(Effect.exit);
+      expect(test.requests.some((request) => request.body?.url?.includes("v1internal"))).toBe(
+        false,
+      );
     }),
   );
 });

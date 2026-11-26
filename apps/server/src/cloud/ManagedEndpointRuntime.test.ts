@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import { afterAll, beforeAll, vi } from "vite-plus/test";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
@@ -31,6 +32,11 @@ import * as ServerConfig from "../config.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as RelayClientLedger from "./RelayClientLedger.ts";
+
+// The fork starts Cloudflare connectors only on explicit opt-in; these tests cover that path.
+// Runtimes built under the default config provider read it from the process environment.
+beforeAll(() => vi.stubEnv("T3CODE_ENABLE_CLOUDFLARE_TUNNEL", "true"));
+afterAll(() => vi.unstubAllEnvs());
 
 const layerRelayClientAvailable = Layer.succeed(
   RelayClient.RelayClient,
@@ -97,7 +103,12 @@ const buildCloudManagedEndpointRuntime = (
     );
   }).pipe(
     Effect.provideService(HostProcess.Environment, env),
-    Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+    // The fork starts Cloudflare connectors only on explicit opt-in; these tests cover that path.
+    Effect.provide(
+      ConfigProvider.layer(
+        ConfigProvider.fromEnv({ env: { T3CODE_ENABLE_CLOUDFLARE_TUNNEL: "true", ...env } }),
+      ),
+    ),
   );
 
 function makeHandle(input: {
@@ -599,7 +610,11 @@ describe("CloudManagedEndpointRuntime", () => {
       expect(fixture.killed).toEqual([800, 801]);
     }).pipe(
       Effect.provideService(HostProcess.Environment, {}),
-      Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { T3CODE_ENABLE_CLOUDFLARE_TUNNEL: "true" } }),
+        ),
+      ),
     ),
   );
 
