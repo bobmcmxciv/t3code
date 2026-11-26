@@ -187,9 +187,15 @@
         "expo-network",
         "expo-sharing"
       ],
+      "android": {
+        "exclude": [
+          "expo-observe"
+        ]
+      },
       "ios": {
         "exclude": [
-          "react-native-pdf-jsi"
+          "react-native-pdf-jsi",
+          "expo-observe"
         ]
       }
     }
